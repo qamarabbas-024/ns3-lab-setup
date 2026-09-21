@@ -7,16 +7,23 @@ color 0B
 cd /d "%~dp0"
 
 :: -----------------------------------------------------------------------------
-:: 0. SELF-UNBLOCK (Removes WhatsApp / Internet Mark-of-the-Web)
+:: 1. IMMEDIATE STARTUP BANNER (Eliminates Black Screen & Freezes)
 :: -----------------------------------------------------------------------------
-powershell -ExecutionPolicy Bypass -NoProfile -Command "Unblock-File -Path '%~f0' -ErrorAction SilentlyContinue; Get-ChildItem -Path '%~dp0' -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue" >nul 2>&1
+echo ==============================================================================
+echo                 ns-3 AUTOMATED ONE-CLICK INSTALLATION SUITE
+echo             Computer Networks Lab (Lab 01) - BSCS Department
+echo       Prepared with care for BSCS Batch 2025-2029 by Qamar Abbas
+echo ==============================================================================
+echo.
+echo   [*] Initializing ns-3 Environment Manager, please wait...
 
 :: -----------------------------------------------------------------------------
-:: 1. ELEVATION CHECK & ANTI-VANISHING UAC WRAPPER
+:: 2. ELEVATION CHECK & ANTI-VANISHING UAC WRAPPER
 :: -----------------------------------------------------------------------------
 net session >nul 2>&1
 if %errorlevel% equ 0 goto :IS_ADMIN
 
+echo.
 echo ==============================================================================
 echo                    ADMINISTRATOR PERMISSION REQUIRED
 echo          Computer Networks Lab - BSCS Department [Semester 3]
@@ -32,15 +39,24 @@ exit /b 0
 :IS_ADMIN
 
 :: -----------------------------------------------------------------------------
-:: 2. RE-ENTRY / CONTROL CENTER DETECTION
+:: 3. SELF-UNBLOCK (Removes WhatsApp / Internet Mark-of-the-Web in background)
 :: -----------------------------------------------------------------------------
-:: Check if ns-3 is already fully installed and compiled
+powershell -ExecutionPolicy Bypass -NoProfile -Command "Unblock-File -Path '%~f0' -ErrorAction SilentlyContinue" >nul 2>&1
+
+:: -----------------------------------------------------------------------------
+:: 4. FAST RE-ENTRY / CONTROL CENTER DETECTION (Non-Blocking)
+:: -----------------------------------------------------------------------------
+:: Only query WSL if wsl.exe exists and Ubuntu is registered (avoids 15-second hang)
+where wsl.exe >nul 2>&1
+if %errorlevel% neq 0 goto :FRESH_INSTALL_VIEW
+
+wsl.exe -l -q 2>nul | findstr /i "Ubuntu" >nul 2>&1
+if %errorlevel% neq 0 goto :FRESH_INSTALL_VIEW
+
 wsl.exe -d Ubuntu bash -c "[ -f ~/workspace/ns-3-dev/ns3 ] && echo READY" 2>nul | findstr /i "READY" >nul 2>&1
 if %errorlevel% equ 0 goto :CONTROL_CENTER
 
-:: -----------------------------------------------------------------------------
-:: 3. FRESH INSTALLATION WELCOME BANNER
-:: -----------------------------------------------------------------------------
+:FRESH_INSTALL_VIEW
 cls
 echo ==============================================================================
 echo                 ns-3 AUTOMATED ONE-CLICK INSTALLATION SUITE
