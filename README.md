@@ -6,7 +6,7 @@
 [![VS Code Remote](https://img.shields.io/badge/VS%20Code-WSL%20Integrated-007ACC?logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com)
 [![BSCS Semester 3](https://img.shields.io/badge/BSCS%202025--2029-Computer%20Networks-green)](https://github.com/qamarabbas-024)
 
-> **Prepared with care for BSCS Batch 2025–2029 | Computer Networks Lab (Lab 01)**  
+> **Prepared with care for Students**  
 > *Facilitated and engineered by Qamar Abbas*
 
 An autonomous, 100% self-contained one-click installer (`INSTALL_ALL_ns3.bat`) that prepares, configures, compiles, and verifies the complete **ns-3 Network Simulation Environment** on Windows 10 and Windows 11 machines.
