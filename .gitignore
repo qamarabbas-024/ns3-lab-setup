@@ -1,0 +1,21 @@
+# Operating System Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Temporary and Log Files
+install_log.txt
+*.tmp
+*.log
+*.bak
+ns3_audit_*.ps1
+ns3_gen_shortcuts_*.ps1
+.ns3_setup_state
+
+# Office Temp Files
+~$*
+
+# IDE & Editor Files
+.vscode/
+.idea/
