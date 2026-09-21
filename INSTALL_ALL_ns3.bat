@@ -29,6 +29,23 @@ exit /b %errorlevel%
 
 $Host.UI.RawUI.WindowTitle = "ns-3 Automated Simulation Suite - BSCS Computer Networks"
 
+# Safe input helper functions (immune to console redirection crashes)
+function Wait-ForInput {
+    try {
+        [void][Console]::ReadKey($true)
+    } catch {
+        try { [void][Console]::ReadLine() } catch { Start-Sleep -Seconds 2 }
+    }
+}
+
+function Wait-ForEnter {
+    try {
+        [void][Console]::ReadLine()
+    } catch {
+        Start-Sleep -Seconds 2
+    }
+}
+
 # Determine script path and working directory
 $scriptPath = $env:NS3_SCRIPT_PATH
 if (-not $scriptPath) { $scriptPath = $MyInvocation.MyCommand.Path }
@@ -156,19 +173,19 @@ function Show-ControlCenter {
                 Write-Host "`nRunning Lab 1 (first.cc)...`n" -ForegroundColor Yellow
                 wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && ./ns3 run examples/tutorial/first"
                 Write-Host "`nPress Enter to return to menu..." -ForegroundColor Gray
-                [void][Console]::ReadLine()
+                Wait-ForEnter
             }
             "4" {
                 Write-Host "`nRunning Smoke Test (hello-simulator)...`n" -ForegroundColor Yellow
                 wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && ./ns3 run hello-simulator"
                 Write-Host "`nPress Enter to return to menu..." -ForegroundColor Gray
-                [void][Console]::ReadLine()
+                Wait-ForEnter
             }
             "5" {
                 Write-Host "`nRecompiling ns-3 code with Ninja...`n" -ForegroundColor Yellow
                 wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && ./ns3 build"
                 Write-Host "`nPress Enter to return to menu..." -ForegroundColor Gray
-                [void][Console]::ReadLine()
+                Wait-ForEnter
             }
             "6" {
                 New-DesktopShortcuts -TargetDir $scriptDir
@@ -193,7 +210,7 @@ function New-DesktopShortcuts {
     $wsh = New-Object -ComObject WScript.Shell
 
     # 1. open_ns3_terminal.bat
-    $termContent = @"
+    $termContent = @'
 @echo off
 setlocal
 cd /d "%~dp0"
@@ -216,25 +233,42 @@ wsl.exe -d Ubuntu -e bash -lic "cd ~/workspace/ns-3-dev 2>/dev/null || cd ~; cat
 ======================================================================
 EOF
 exec bash"
-"@
+'@
     [System.IO.File]::WriteAllText((Join-Path $TargetDir "open_ns3_terminal.bat"), $termContent)
 
     # 2. open_ns3_vscode.bat
-    $codeContent = @"
+    $codeContent = @'
 @echo off
 setlocal
 cd /d "%~dp0"
 title ns-3 VS Code Workspace - Computer Networks Lab
 color 0A
-echo Opening ns-3 workspace in Visual Studio Code...
+
+if exist "%LOCALAPPDATA%\Programs\Microsoft VS Code\bin" (
+    set "PATH=%LOCALAPPDATA%\Programs\Microsoft VS Code\bin;%PATH%"
+)
+
+echo ======================================================================
+echo   OPENING ns-3 IN VISUAL STUDIO CODE [WSL UBUNTU]
+echo   Computer Networks Lab (Lab 01) - BSCS Department [Semester 3]
+echo    Prepared with care for BSCS Students by Qamar Abbas
+echo ======================================================================
+echo.
+echo [*] Connecting VS Code to Ubuntu workspace: ~/workspace/ns-3-dev ...
+
 wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && code ."
 if %errorlevel% neq 0 (
     where code >nul 2>&1
     if %errorlevel% equ 0 (
-        code --remote wsl+Ubuntu /home/%USERNAME%/workspace/ns-3-dev
+        for /f "usebackq delims=" %%u in (`wsl.exe -d Ubuntu bash -c "echo $USER"`) do set "WSL_USER=%%u"
+        if defined WSL_USER (
+            code --remote wsl+Ubuntu /home/%WSL_USER%/workspace/ns-3-dev
+        ) else (
+            code --remote wsl+Ubuntu /root/workspace/ns-3-dev
+        )
     )
 )
-"@
+'@
     [System.IO.File]::WriteAllText((Join-Path $TargetDir "open_ns3_vscode.bat"), $codeContent)
 
     # 3. Desktop Shortcuts
@@ -297,7 +331,7 @@ Write-Host ""
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host "  Press any key to begin the Pre-Flight System Audit..." -ForegroundColor Yellow
 Write-Host "==============================================================================" -ForegroundColor Cyan
-[void][Console]::ReadKey($true)
+Wait-ForInput
 
 # 4. Phase 1: Pre-Flight System Readiness Audit
 Clear-Host
@@ -431,7 +465,7 @@ if (-not $allPass) {
     Write-Host ""
     Write-Host "  This window will stay open so you can note down the instructions." -ForegroundColor White
     Write-Host "  Press Enter to close this window..." -ForegroundColor Gray
-    [void][Console]::ReadLine()
+    Wait-ForEnter
     exit 1
 }
 
@@ -453,14 +487,14 @@ if ($isSandbox) {
     Write-Host "  Everything is verified and ready for full installation on your real PC!" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Press Enter to exit the Sandbox test..." -ForegroundColor Gray
-    [void][Console]::ReadLine()
+    Wait-ForEnter
     exit 0
 }
 
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host "  Press any key to proceed with installation..." -ForegroundColor Yellow
 Write-Host "==============================================================================" -ForegroundColor Cyan
-[void][Console]::ReadKey($true)
+Wait-ForInput
 
 # 5. Phase 2: Storage Confirmation
 Clear-Host
@@ -478,7 +512,7 @@ Write-Host ""
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host "  Press [ENTER] to confirm and use the Recommended Fast Location (Default)" -ForegroundColor Yellow
 Write-Host "==============================================================================" -ForegroundColor Cyan
-[void][Console]::ReadLine()
+Wait-ForEnter
 
 # 6. Phase 3: WSL2 & Ubuntu Provisioning
 Clear-Host
@@ -526,7 +560,7 @@ if ($ubuntuInstalled) {
         Write-Host "     (It will automatically resume right where you left off!)" -ForegroundColor Gray
         Write-Host ""
         Write-Host "  Press Enter to close this window and restart your PC..." -ForegroundColor Yellow
-        [void][Console]::ReadLine()
+        Wait-ForEnter
         exit 0
     }
     Write-Host "  [OK] WSL2 and Ubuntu installed successfully!" -ForegroundColor Green
@@ -673,6 +707,11 @@ $buildScript = @"
 set -e
 mkdir -p ~/workspace
 cd ~/workspace
+git config --global --add safe.directory "*" 2>/dev/null || true
+if [ -d 'ns-3-dev' ] && [ ! -d 'ns-3-dev/.git' ]; then
+    echo '[*] Cleaning up incomplete previous download...'
+    rm -rf ns-3-dev
+fi
 if [ ! -d 'ns-3-dev/.git' ]; then
     echo '[*] Fetching ns-3 repository using fast shallow download...'
     git clone --depth 1 https://gitlab.com/nsnam/ns-3-dev.git ns-3-dev
@@ -680,6 +719,7 @@ else
     echo '[OK] ns-3 source repository already exists!'
 fi
 cd ~/workspace/ns-3-dev
+chmod +x ./ns3 2>/dev/null || true
 echo '[*] Configuring ns-3 build system (enabling examples)...'
 ./ns3 configure --enable-examples -d optimized
 echo '[*] Starting compilation with Ninja ($compileJobs CPU threads)...'
@@ -695,7 +735,7 @@ if (-not $buildSuccess) {
     Write-Host "`n  [!] ns-3 compilation encountered an issue." -ForegroundColor Red
     Write-Host "  This window will remain open so you can read the log above." -ForegroundColor White
     Write-Host "  Press Enter to exit..." -ForegroundColor Gray
-    [void][Console]::ReadLine()
+    Wait-ForEnter
     exit 1
 }
 
@@ -748,7 +788,7 @@ Write-Host ""
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host "  Installation is complete! Press any key to launch your ns-3 terminal now..." -ForegroundColor Yellow
 Write-Host "==============================================================================" -ForegroundColor Cyan
-[void][Console]::ReadKey($true)
+Wait-ForInput
 
 $termBat = Join-Path $scriptDir "open_ns3_terminal.bat"
 if (Test-Path $termBat) { Start-Process $termBat } else { wsl.exe -d Ubuntu -e bash -lic "cd ~/workspace/ns-3-dev; exec bash" }
