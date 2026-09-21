@@ -51,8 +51,13 @@ $scriptPath = $env:NS3_SCRIPT_PATH
 if (-not $scriptPath) { $scriptPath = $MyInvocation.MyCommand.Path }
 if (-not $scriptPath -or -not (Test-Path $scriptPath)) {
     # If run in-memory via web runner (irm ... | iex), establish clean local workspace
-    $defaultDir = "C:\ns3-setup"
-    if (-not (Test-Path $defaultDir)) { New-Item -ItemType Directory -Path $defaultDir -Force | Out-Null }
+    $defaultDir = Join-Path $env:SystemDrive "ns3-setup"
+    try {
+        if (-not (Test-Path $defaultDir)) { New-Item -ItemType Directory -Path $defaultDir -Force | Out-Null }
+    } catch {
+        $defaultDir = Join-Path $env:USERPROFILE "ns3-setup"
+        if (-not (Test-Path $defaultDir)) { New-Item -ItemType Directory -Path $defaultDir -Force | Out-Null }
+    }
     $scriptPath = Join-Path $defaultDir "INSTALL_ALL_ns3.bat"
     if (-not (Test-Path $scriptPath)) {
         try {
@@ -62,6 +67,23 @@ if (-not $scriptPath -or -not (Test-Path $scriptPath)) {
     }
 }
 $scriptDir = Split-Path -Parent $scriptPath
+
+# Early Hardware Specs & Turbo Concurrency Calculation
+$cpuThreads = [Environment]::ProcessorCount
+if (-not $cpuThreads -or $cpuThreads -lt 2) { $cpuThreads = 2 }
+$csMem = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
+$totalRamGB = if ($csMem) { [math]::Round($csMem.TotalPhysicalMemory / 1GB, 1) } else { 8 }
+if ($totalRamGB -lt 4) {
+    $compileJobs = 2
+} elseif ($totalRamGB -lt 8) {
+    $compileJobs = [math]::Min($cpuThreads, 4)
+} elseif ($totalRamGB -lt 16) {
+    $compileJobs = [math]::Min($cpuThreads, [math]::Max(4, [int]($totalRamGB / 1.5)))
+} elseif ($totalRamGB -lt 32) {
+    $compileJobs = [math]::Min($cpuThreads, [math]::Max(8, [int]($totalRamGB / 1.2)))
+} else {
+    $compileJobs = $cpuThreads
+}
 
 # 0. Self-Unblock current directory (Removes Mark-of-the-Web to prevent Smart App Control blocks)
 try {
@@ -182,8 +204,8 @@ function Show-ControlCenter {
                 Wait-ForEnter
             }
             "5" {
-                Write-Host "`nRecompiling ns-3 code with Ninja...`n" -ForegroundColor Yellow
-                wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && ./ns3 build"
+                Write-Host "`nRecompiling ns-3 code with Ninja ($compileJobs threads)...`n" -ForegroundColor Yellow
+                wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && ./ns3 build -j $compileJobs"
                 Write-Host "`nPress Enter to return to menu..." -ForegroundColor Gray
                 Wait-ForEnter
             }
@@ -193,7 +215,11 @@ function Show-ControlCenter {
                 Start-Sleep -Seconds 2
             }
             "7" {
+                Write-Host "`n  [*] Cleaning ns-3 build cache and resetting configuration..." -ForegroundColor Yellow
+                wsl.exe -d Ubuntu bash -c "cd ~/workspace/ns-3-dev 2>/dev/null && rm -rf build" 2>$null
                 wsl.exe -d Ubuntu bash -c "rm -f ~/workspace/ns-3-dev/ns3" 2>$null
+                Write-Host "  [OK] Reset complete. Restarting installation..." -ForegroundColor Green
+                Start-Sleep -Seconds 2
                 return
             }
             "8" { exit 0 }
@@ -207,6 +233,7 @@ function New-DesktopShortcuts {
     param([string]$TargetDir)
     
     $desktop = [Environment]::GetFolderPath("Desktop")
+    $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
     $wsh = New-Object -ComObject WScript.Shell
 
     # 1. open_ns3_terminal.bat
@@ -216,6 +243,7 @@ setlocal
 cd /d "%~dp0"
 title ns-3 Linux Terminal - Computer Networks Lab
 color 0B
+
 wsl.exe -d Ubuntu -e bash -lic "cd ~/workspace/ns-3-dev 2>/dev/null || cd ~; cat << 'EOF'
 ======================================================================
      WELCOME TO YOUR ns-3 NETWORK SIMULATION ENVIRONMENT!
@@ -233,6 +261,16 @@ wsl.exe -d Ubuntu -e bash -lic "cd ~/workspace/ns-3-dev 2>/dev/null || cd ~; cat
 ======================================================================
 EOF
 exec bash"
+
+if %errorlevel% neq 0 (
+    echo.
+    echo ======================================================================
+    echo  [!] Could not start WSL Ubuntu session.
+    echo  Error Code: %errorlevel%
+    echo  If your computer just started up, please wait a moment and try again.
+    echo ======================================================================
+    pause
+)
 '@
     [System.IO.File]::WriteAllText((Join-Path $TargetDir "open_ns3_terminal.bat"), $termContent)
 
@@ -246,6 +284,12 @@ color 0A
 
 if exist "%LOCALAPPDATA%\Programs\Microsoft VS Code\bin" (
     set "PATH=%LOCALAPPDATA%\Programs\Microsoft VS Code\bin;%PATH%"
+)
+if exist "%ProgramFiles%\Microsoft VS Code\bin" (
+    set "PATH=%ProgramFiles%\Microsoft VS Code\bin;%PATH%"
+)
+if exist "%ProgramFiles(x86)%\Microsoft VS Code\bin" (
+    set "PATH=%ProgramFiles(x86)%\Microsoft VS Code\bin;%PATH%"
 )
 
 echo ======================================================================
@@ -266,27 +310,39 @@ if %errorlevel% neq 0 (
         ) else (
             code --remote wsl+Ubuntu /root/workspace/ns-3-dev
         )
+    ) else (
+        echo.
+        echo  [!] Visual Studio Code was not found or failed to launch.
+        echo  Please open the ns-3 Linux Terminal and run 'code .' from there,
+        echo  or verify that Visual Studio Code is installed.
+        pause
     )
 )
 '@
     [System.IO.File]::WriteAllText((Join-Path $TargetDir "open_ns3_vscode.bat"), $codeContent)
 
-    # 3. Desktop Shortcuts
-    try {
-        $sc1 = $wsh.CreateShortcut("$desktop\ns-3 Linux Terminal.lnk")
-        $sc1.TargetPath = (Join-Path $TargetDir "open_ns3_terminal.bat")
-        $sc1.WorkingDirectory = $TargetDir
-        $sc1.IconLocation = "cmd.exe,0"
-        $sc1.Description = "Open ns-3 Linux Terminal (Computer Networks Lab)"
-        $sc1.Save()
+    # 3. Desktop Shortcuts (Installed to both User Desktop and Public Desktop for 100% visibility)
+    $desktopDirs = @($desktop)
+    if ($publicDesktop -and (Test-Path $publicDesktop) -and $publicDesktop -ne $desktop) {
+        $desktopDirs += $publicDesktop
+    }
+    foreach ($d in $desktopDirs) {
+        try {
+            $sc1 = $wsh.CreateShortcut(Join-Path $d "ns-3 Linux Terminal.lnk")
+            $sc1.TargetPath = (Join-Path $TargetDir "open_ns3_terminal.bat")
+            $sc1.WorkingDirectory = $TargetDir
+            $sc1.IconLocation = "cmd.exe,0"
+            $sc1.Description = "Open ns-3 Linux Terminal (Computer Networks Lab)"
+            $sc1.Save()
 
-        $sc2 = $wsh.CreateShortcut("$desktop\ns-3 VS Code.lnk")
-        $sc2.TargetPath = (Join-Path $TargetDir "open_ns3_vscode.bat")
-        $sc2.WorkingDirectory = $TargetDir
-        $sc2.IconLocation = "shell32.dll,220"
-        $sc2.Description = "Open ns-3 in Visual Studio Code (Computer Networks Lab)"
-        $sc2.Save()
-    } catch {}
+            $sc2 = $wsh.CreateShortcut(Join-Path $d "ns-3 VS Code.lnk")
+            $sc2.TargetPath = (Join-Path $TargetDir "open_ns3_vscode.bat")
+            $sc2.WorkingDirectory = $TargetDir
+            $sc2.IconLocation = "shell32.dll,220"
+            $sc2.Description = "Open ns-3 in Visual Studio Code (Computer Networks Lab)"
+            $sc2.Save()
+        } catch {}
+    }
 }
 
 # 2. Fast Non-Blocking Re-entry Check (Checks if ns-3 already installed)
@@ -607,9 +663,13 @@ if ($existingUser -eq "NONE" -or -not $existingUser) {
     if ($passChoice -eq "2") {
         Write-Host "`n  Opening interactive Ubuntu setup. Please enter your username and password below:" -ForegroundColor Yellow
         wsl.exe -d Ubuntu
+        wsl.exe -t Ubuntu 2>$null
+        Start-Sleep -Seconds 2
     } else {
         Write-Host "`n  [*] Creating standard lab account 'student' with password '12345'..." -ForegroundColor Yellow
         wsl.exe -d Ubuntu -u root bash -c "useradd -m -s /bin/bash -G sudo student 2>/dev/null || true; echo 'student:12345' | chpasswd; echo 'student ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/student; chmod 0440 /etc/sudoers.d/student; printf '[user]\ndefault=student\n' > /etc/wsl.conf"
+        wsl.exe -t Ubuntu 2>$null
+        Start-Sleep -Seconds 2
         Write-Host "  [OK] Account 'student' configured with password '12345' and seamless sudo!" -ForegroundColor Green
     }
 } else {
@@ -681,11 +741,23 @@ Write-Host ""
 Write-Host "  Note: This step installs g++, cmake, ninja-build, git, python3, ccache." -ForegroundColor White
 Write-Host "  Estimated duration: ~2 to 4 minutes.`n" -ForegroundColor Gray
 
-wsl.exe -d Ubuntu -u root bash -c "apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends g++ cmake ninja-build git python3 python3-pip python3-setuptools ccache pkg-config sqlite3 libsqlite3-dev libxml2 libxml2-dev"
+$pkgInstallCmd = @'
+for i in $(seq 1 30); do
+    if fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || fuser /var/lib/apt/lists/lock >/dev/null 2>&1; then
+        echo "[*] Waiting for Ubuntu background updates to complete (attempt $i/30)..."
+        sleep 2
+    else
+        break
+    fi
+done
+apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends g++ cmake ninja-build git python3 python3-pip python3-setuptools ccache pkg-config sqlite3 libsqlite3-dev libxml2 libxml2-dev
+'@
+
+wsl.exe -d Ubuntu -u root bash -c "$pkgInstallCmd"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "`n  [!] Retrying package installation once..." -ForegroundColor Yellow
-    wsl.exe -d Ubuntu -u root bash -c "apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends g++ cmake ninja-build git python3 python3-pip python3-setuptools ccache pkg-config sqlite3 libsqlite3-dev libxml2 libxml2-dev"
+    wsl.exe -d Ubuntu -u root bash -c "$pkgInstallCmd"
 }
 Write-Host "`n  [OK] All C++ compilers and build tools successfully installed!" -ForegroundColor Green
 
@@ -728,14 +800,22 @@ if [ -d 'ns-3-dev' ] && [ ! -d 'ns-3-dev/.git' ]; then
 fi
 if [ ! -d 'ns-3-dev/.git' ]; then
     echo '[*] Fetching ns-3 repository using fast shallow download...'
-    git clone --depth 1 https://gitlab.com/nsnam/ns-3-dev.git ns-3-dev
+    if ! git clone --depth 1 https://gitlab.com/nsnam/ns-3-dev.git ns-3-dev; then
+        echo '[!] Primary GitLab download timed out or failed. Falling back to GitHub mirror...'
+        rm -rf ns-3-dev
+        git clone --depth 1 https://github.com/nsnam/ns-3-dev-git.git ns-3-dev
+    fi
 else
     echo '[OK] ns-3 source repository already exists!'
 fi
 cd ~/workspace/ns-3-dev
 chmod +x ./ns3 2>/dev/null || true
 echo '[*] Configuring ns-3 build system (examples & runtime logging enabled, tests disabled for max speed)...'
-./ns3 configure --enable-examples --disable-tests --enable-logs -d optimized
+./ns3 configure --enable-examples --disable-tests --enable-logs -d optimized || {
+    echo '[!] Build cache conflict detected. Cleaning cache and reconfiguring...'
+    rm -rf build
+    ./ns3 configure --enable-examples --disable-tests --enable-logs -d optimized
+}
 echo '[*] Starting compilation with Ninja ($compileJobs CPU threads)...'
 ./ns3 build -j $compileJobs
 "@
