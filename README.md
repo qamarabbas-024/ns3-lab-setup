@@ -74,7 +74,7 @@ This method streams the installer directly into memory without saving browser do
 1. Press <kbd>Win</kbd> + <kbd>R</kbd> on your keyboard (opens the Windows Run box).
 2. Copy and paste this command, then press **Enter**:
    ```powershell
-   powershell -ep bypass -c "irm https://raw.githubusercontent.com/qamarabbas-024/ns3-setup-for-window-10-11/main/INSTALL_ALL_ns3.bat | iex"
+   powershell -ep bypass -c "irm https://raw.githubusercontent.com/qamarabbas-024/ns3-lab-setup/main/INSTALL_ALL_ns3.bat | iex"
    ```
 3. Click **"YES"** on the Administrator (UAC) prompt when it appears.
 4. Sit back and watch the installer automatically configure everything!

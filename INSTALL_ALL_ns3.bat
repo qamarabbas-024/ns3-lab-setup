@@ -61,7 +61,7 @@ if (-not $scriptPath -or -not (Test-Path $scriptPath)) {
     $scriptPath = Join-Path $defaultDir "INSTALL_ALL_ns3.bat"
     if (-not (Test-Path $scriptPath)) {
         try {
-            Invoke-RestMethod -Uri "https://raw.githubusercontent.com/qamarabbas-024/ns3-setup-for-window-10-11/main/INSTALL_ALL_ns3.bat" -OutFile $scriptPath
+            Invoke-RestMethod -Uri "https://raw.githubusercontent.com/qamarabbas-024/ns3-lab-setup/main/INSTALL_ALL_ns3.bat" -OutFile $scriptPath
             Unblock-File -Path $scriptPath -ErrorAction SilentlyContinue
         } catch {}
     }
