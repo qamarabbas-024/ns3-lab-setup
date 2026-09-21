@@ -752,7 +752,7 @@ for i in $(seq 1 30); do
         break
     fi
 done
-apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends g++ cmake ninja-build git python3 python3-pip python3-setuptools ccache pkg-config sqlite3 libsqlite3-dev libxml2 libxml2-dev
+apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends g++ cmake ninja-build git python3 python3-pip python3-setuptools ccache pkg-config sqlite3 libsqlite3-dev libxml2-dev
 '@
 
 wsl.exe -d Ubuntu -u root bash -c "$pkgInstallCmd"
