@@ -244,23 +244,23 @@ cd /d "%~dp0"
 title ns-3 Linux Terminal - Computer Networks Lab
 color 0B
 
-wsl.exe -d Ubuntu -e bash -lic "cd ~/workspace/ns-3-dev 2>/dev/null || cd ~; cat << 'EOF'
-======================================================================
-     WELCOME TO YOUR ns-3 NETWORK SIMULATION ENVIRONMENT!
-     Computer Networks Lab (Lab 01) - BSCS Department [Semester 3]
-      Prepared with care for BSCS Students by Qamar Abbas
-======================================================================
- Current Directory: ~/workspace/ns-3-dev
+echo ======================================================================
+echo      WELCOME TO YOUR ns-3 NETWORK SIMULATION ENVIRONMENT!
+echo      Computer Networks Lab (Lab 01) - BSCS Department [Semester 3]
+echo       Prepared with care for BSCS Students by Qamar Abbas
+echo ======================================================================
+echo  Current Directory: ~/workspace/ns-3-dev
+echo.
+echo  LAB 1 CHEAT SHEET:
+echo    - Test Simulator : ./ns3 run hello-simulator
+echo    - Run Lab 1      : ./ns3 run examples/tutorial/first
+echo    - Recompile Code : ./ns3 build
+echo    - Open VS Code   : code .
+echo    - Exit to Windows: exit
+echo ======================================================================
+echo.
 
- LAB 1 CHEAT SHEET:
-   - Test Simulator : ./ns3 run hello-simulator
-   - Run Lab 1      : ./ns3 run examples/tutorial/first
-   - Recompile Code : ./ns3 build
-   - Open VS Code   : code .
-   - Exit to Windows: exit
-======================================================================
-EOF
-exec bash"
+wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev 2>/dev/null || cd ~; exec bash"
 
 if %errorlevel% neq 0 (
     echo.
