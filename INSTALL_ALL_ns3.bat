@@ -351,6 +351,8 @@ $is64 = [Environment]::Is64BitOperatingSystem
 $virt = ($cs.HypervisorPresent -eq $true) -or ($proc.VirtualizationFirmwareEnabled -eq $true)
 $ramGB = [math]::Round($cs.TotalPhysicalMemory / 1GB, 1)
 $freeDiskGB = if ($disk) { [math]::Round($disk.Free / 1GB, 1) } else { 0 }
+$cpuThreads = [Environment]::ProcessorCount
+if (-not $cpuThreads -or $cpuThreads -lt 2) { $cpuThreads = 2 }
 
 # Non-blocking network check (3-second timeout)
 $hasNet = $false
@@ -405,20 +407,32 @@ if ($virt) {
     $allPass = $false
 }
 
-# Check 4: RAM & CPU Concurrency Tuning
-$compileJobs = 4
+# Check 4: Processor & CPU Threads
+$procName = ($proc.Name -replace "\(R\)|\(TM\)", "").Trim()
+if ($procName.Length -gt 28) { $procName = $procName.Substring(0, 25) + "..." }
+Write-Host ("   Processor Architecture   : {0,-35} [PASS]" -f ($procName + " ($cpuThreads Threads)")) -ForegroundColor Green
+
+# Check 5: RAM & Turbo Concurrency Tuning
 if ($ramGB -lt 4) {
-    Write-Host ("   System Memory [RAM]      : {0,-35} [WARN]" -f ($ramGB.ToString() + " GB [Low Memory Profile]")) -ForegroundColor Yellow
+    Write-Host ("   System Memory [RAM]      : {0,-35} [WARN]" -f ($ramGB.ToString() + " GB [2 Threads - Low Memory]")) -ForegroundColor Yellow
     $compileJobs = 2
 } elseif ($ramGB -lt 8) {
-    Write-Host ("   System Memory [RAM]      : {0,-35} [PASS]" -f ($ramGB.ToString() + " GB [Safe 4GB Concurrency]")) -ForegroundColor Green
-    $compileJobs = 2
+    $compileJobs = [math]::Min($cpuThreads, 4)
+    Write-Host ("   System Memory [RAM]      : {0,-35} [PASS]" -f ($ramGB.ToString() + " GB [$compileJobs Threads - Safe Concurrency]")) -ForegroundColor Green
+} elseif ($ramGB -lt 16) {
+    $compileJobs = [math]::Min($cpuThreads, [math]::Max(4, [int]($ramGB / 1.5)))
+    Write-Host ("   System Memory [RAM]      : {0,-35} [PASS]" -f ($ramGB.ToString() + " GB [$compileJobs Threads - High-Speed Concurrency]")) -ForegroundColor Green
+} elseif ($ramGB -lt 32) {
+    # 16 GB to 32 GB RAM: High-end systems (Uses all CPU threads up to safe memory limits)
+    $compileJobs = [math]::Min($cpuThreads, [math]::Max(8, [int]($ramGB / 1.2)))
+    Write-Host ("   System Memory [RAM]      : {0,-35} [PASS]" -f ($ramGB.ToString() + " GB [$compileJobs Threads - Turbo Accelerator]")) -ForegroundColor Green
 } else {
-    Write-Host ("   System Memory [RAM]      : {0,-35} [PASS]" -f ($ramGB.ToString() + " GB [Multi-Core Turbo Profile]")) -ForegroundColor Green
-    $compileJobs = 4
+    # 32 GB+ RAM: MAXIMUM BEAST MODE (All available CPU cores / threads unrestricted)
+    $compileJobs = $cpuThreads
+    Write-Host ("   System Memory [RAM]      : {0,-35} [PASS]" -f ($ramGB.ToString() + " GB [$compileJobs Threads - Maximum Beast Mode]")) -ForegroundColor Green
 }
 
-# Check 5: Free Disk Space
+# Check 6: Free Disk Space
 if ($freeDiskGB -ge 15) {
     Write-Host ("   Free Storage on C:\      : {0,-35} [PASS]" -f ($freeDiskGB.ToString() + " GB Free on Drive C:")) -ForegroundColor Green
 } else {
@@ -426,7 +440,7 @@ if ($freeDiskGB -ge 15) {
     $allPass = $false
 }
 
-# Check 6: Internet Connectivity
+# Check 7: Internet Connectivity
 if ($hasNet) {
     Write-Host ("   Internet Connectivity    : {0,-35} [PASS]" -f "Connected to Repositories") -ForegroundColor Green
 } else {
