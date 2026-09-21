@@ -734,14 +734,20 @@ else
 fi
 cd ~/workspace/ns-3-dev
 chmod +x ./ns3 2>/dev/null || true
-echo '[*] Configuring ns-3 build system (enabling examples and runtime logging)...'
-./ns3 configure --enable-examples --enable-logs -d optimized
+echo '[*] Configuring ns-3 build system (examples & runtime logging enabled, tests disabled for max speed)...'
+./ns3 configure --enable-examples --disable-tests --enable-logs -d optimized
 echo '[*] Starting compilation with Ninja ($compileJobs CPU threads)...'
 ./ns3 build -j $compileJobs
 "@
 
 wsl.exe -d Ubuntu bash -lic "$buildScript"
 $buildSuccess = ($LASTEXITCODE -eq 0)
+
+if (-not $buildSuccess) {
+    Write-Host "`n  [*] Finalizing compilation and resolving dependencies..." -ForegroundColor Yellow
+    wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && ./ns3 build -j $compileJobs"
+    $buildSuccess = ($LASTEXITCODE -eq 0)
+}
 
 try { [SleepGuard]::Restore() } catch {}
 
