@@ -328,14 +328,16 @@ if %errorlevel% neq 0 (
     }
     foreach ($d in $desktopDirs) {
         try {
-            $sc1 = $wsh.CreateShortcut(Join-Path $d "ns-3 Linux Terminal.lnk")
+            $lnk1 = Join-Path $d "ns-3 Linux Terminal.lnk"
+            $sc1 = $wsh.CreateShortcut($lnk1)
             $sc1.TargetPath = (Join-Path $TargetDir "open_ns3_terminal.bat")
             $sc1.WorkingDirectory = $TargetDir
             $sc1.IconLocation = "cmd.exe,0"
             $sc1.Description = "Open ns-3 Linux Terminal (Computer Networks Lab)"
             $sc1.Save()
 
-            $sc2 = $wsh.CreateShortcut(Join-Path $d "ns-3 VS Code.lnk")
+            $lnk2 = Join-Path $d "ns-3 VS Code.lnk"
+            $sc2 = $wsh.CreateShortcut($lnk2)
             $sc2.TargetPath = (Join-Path $TargetDir "open_ns3_vscode.bat")
             $sc2.WorkingDirectory = $TargetDir
             $sc2.IconLocation = "shell32.dll,220"
