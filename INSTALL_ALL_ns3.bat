@@ -7,7 +7,7 @@ cd /d "%~dp0"
 set "NS3_SCRIPT_PATH=%~f0"
 
 :: Execute embedded PowerShell engine with ExecutionPolicy Bypass
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$scriptPath=$env:NS3_SCRIPT_PATH; $s=[System.IO.File]::ReadAllText($scriptPath); Invoke-Expression $s"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$scriptPath=$env:NS3_SCRIPT_PATH; $s=[System.IO.File]::ReadAllText($scriptPath, [System.Text.Encoding]::UTF8); Invoke-Expression $s"
 
 :: Anti-Vanishing Catch-all (Keeps window open if any error occurred)
 if %errorlevel% neq 0 (
@@ -102,10 +102,10 @@ if ($isSandbox) {
     Write-Host "  You are currently testing inside Windows Sandbox (WDAGUtilityAccount)." -ForegroundColor White
     Write-Host ""
     Write-Host "  IMPORTANT NOTICE FOR WINDOWS SANDBOX:" -ForegroundColor Yellow
-    Write-Host "    • Windows Sandbox does NOT have nested virtualization enabled." -ForegroundColor Gray
+    Write-Host "    - Windows Sandbox does NOT have nested virtualization enabled." -ForegroundColor Gray
     Write-Host "      Windows Subsystem for Linux (WSL2) cannot run inside Sandbox." -ForegroundColor Gray
-    Write-Host "    • Windows Sandbox is temporary: all files will be discarded on close." -ForegroundColor Gray
-    Write-Host "    • To install ns-3 for your coursework, please run this installer" -ForegroundColor White
+    Write-Host "    - Windows Sandbox is temporary: all files will be discarded on close." -ForegroundColor Gray
+    Write-Host "    - To install ns-3 for your coursework, please run this installer" -ForegroundColor White
     Write-Host "      directly on your physical Windows 10/11 laptop (outside Sandbox)!" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Select an option:" -ForegroundColor White
@@ -518,8 +518,8 @@ if (-not $allPass) {
         Write-Host "  WSL2 Linux requires CPU Virtualization to be enabled. To turn it on:" -ForegroundColor White
         Write-Host "    1. Restart your laptop." -ForegroundColor Gray
         Write-Host "    2. Repeatedly press your BIOS key as soon as the screen turns on:" -ForegroundColor Gray
-        Write-Host "       • HP: Esc or F10  |  Dell: F2 or F12  |  Lenovo: F2 or Fn+F2" -ForegroundColor Cyan
-        Write-Host "       • Asus: F2 or Del |  Acer: F2 or Del" -ForegroundColor Cyan
+        Write-Host "       - HP: Esc or F10  |  Dell: F2 or F12  |  Lenovo: F2 or Fn+F2" -ForegroundColor Cyan
+        Write-Host "       - Asus: F2 or Del |  Acer: F2 or Del" -ForegroundColor Cyan
         Write-Host "    3. Find 'Virtualization Technology', 'Intel VT-x', or 'AMD SVM'." -ForegroundColor Gray
         Write-Host "    4. Set it to [Enabled], press F10 to Save and Exit." -ForegroundColor Gray
         Write-Host "    5. Once back in Windows, double-click this installer again!" -ForegroundColor Gray
@@ -577,9 +577,9 @@ Write-Host ""
 Write-Host "  Recommended Location: Native High-Speed Linux Storage (~/workspace/ns-3-dev)" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Why this location is best:" -ForegroundColor White
-Write-Host "    • Compiles 5x to 10x faster than Windows drives (no NTFS bridge bottleneck)" -ForegroundColor Gray
-Write-Host "    • Immune to Windows path length limits and file locking issues" -ForegroundColor Gray
-Write-Host "    • Fully accessible from Windows VS Code and Windows Explorer" -ForegroundColor Gray
+Write-Host "    - Compiles 5x to 10x faster than Windows drives (no NTFS bridge bottleneck)" -ForegroundColor Gray
+Write-Host "    - Immune to Windows path length limits and file locking issues" -ForegroundColor Gray
+Write-Host "    - Fully accessible from Windows VS Code and Windows Explorer" -ForegroundColor Gray
 Write-Host ""
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host "  Press [ENTER] to confirm and use the Recommended Fast Location (Default)" -ForegroundColor Yellow
@@ -654,8 +654,8 @@ if ($existingUser -eq "NONE" -or -not $existingUser) {
     Write-Host "  No default user account found. Let's configure your login:" -ForegroundColor White
     Write-Host ""
     Write-Host "    [1] Quick Setup: Set default password '12345' (Recommended for Lab)" -ForegroundColor Cyan
-    Write-Host "        • Simplifies lab work so you never forget your sudo password" -ForegroundColor Gray
-    Write-Host "        • Automatically configures seamless lab access" -ForegroundColor Gray
+    Write-Host "        - Simplifies lab work so you never forget your sudo password" -ForegroundColor Gray
+    Write-Host "        - Automatically configures seamless lab access" -ForegroundColor Gray
     Write-Host ""
     Write-Host "    [2] Custom Setup: Choose your own username and password" -ForegroundColor Cyan
     Write-Host ""
@@ -872,15 +872,15 @@ Write-Host "          Prepared with care for BSCS Batch 2025-2029 by Qamar Abbas
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Summary of Components Configured:" -ForegroundColor White
-Write-Host "    [✓] Windows Subsystem for Linux (WSL2)         : ACTIVE" -ForegroundColor Green
-Write-Host "    [✓] Ubuntu Linux Environment                  : ACTIVE" -ForegroundColor Green
-Write-Host "    [✓] C++ Compilers and Build Tools (g++, ninja): INSTALLED" -ForegroundColor Green
-Write-Host "    [✓] Visual Studio Code and WSL Remote Plugin  : CONFIGURED" -ForegroundColor Green
-Write-Host "    [✓] ns-3 Simulation Core and Libraries        : COMPILED" -ForegroundColor Green
-Write-Host "    [✓] Verification Test 1 (hello-simulator)     : PASSED" -ForegroundColor Green
-Write-Host "    [✓] Verification Test 2 (first.cc simulation) : PASSED" -ForegroundColor Green
-Write-Host "    [✓] Ubuntu User Account and Password          : CONFIGURED" -ForegroundColor Green
-Write-Host "    [✓] Desktop 1-Click Shortcuts                 : CREATED ON DESKTOP" -ForegroundColor Green
+Write-Host "    [OK] Windows Subsystem for Linux (WSL2)         : ACTIVE" -ForegroundColor Green
+Write-Host "    [OK] Ubuntu Linux Environment                  : ACTIVE" -ForegroundColor Green
+Write-Host "    [OK] C++ Compilers and Build Tools (g++, ninja): INSTALLED" -ForegroundColor Green
+Write-Host "    [OK] Visual Studio Code and WSL Remote Plugin  : CONFIGURED" -ForegroundColor Green
+Write-Host "    [OK] ns-3 Simulation Core and Libraries        : COMPILED" -ForegroundColor Green
+Write-Host "    [OK] Verification Test 1 (hello-simulator)     : PASSED" -ForegroundColor Green
+Write-Host "    [OK] Verification Test 2 (first.cc simulation) : PASSED" -ForegroundColor Green
+Write-Host "    [OK] Ubuntu User Account and Password          : CONFIGURED" -ForegroundColor Green
+Write-Host "    [OK] Desktop 1-Click Shortcuts                 : CREATED ON DESKTOP" -ForegroundColor Green
 Write-Host ""
 Write-Host "  HOW TO START WORKING FROM NOW ON:" -ForegroundColor Cyan
 Write-Host "    1. Desktop Shortcut : Double-click `"ns-3 Linux Terminal`" on your Desktop!" -ForegroundColor White
