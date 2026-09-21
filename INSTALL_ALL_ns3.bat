@@ -720,8 +720,8 @@ else
 fi
 cd ~/workspace/ns-3-dev
 chmod +x ./ns3 2>/dev/null || true
-echo '[*] Configuring ns-3 build system (enabling examples)...'
-./ns3 configure --enable-examples -d optimized
+echo '[*] Configuring ns-3 build system (enabling examples and runtime logging)...'
+./ns3 configure --enable-examples --enable-logs -d optimized
 echo '[*] Starting compilation with Ninja ($compileJobs CPU threads)...'
 ./ns3 build -j $compileJobs
 "@
