@@ -4,9 +4,10 @@ setlocal EnableDelayedExpansion
 title ns-3 Automated Environment - BSCS Computer Networks
 color 0B
 cd /d "%~dp0"
+set "NS3_SCRIPT_PATH=%~f0"
 
 :: Execute embedded PowerShell engine with ExecutionPolicy Bypass
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=[System.IO.File]::ReadAllText('%~f0'); Invoke-Expression $s"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$scriptPath=$env:NS3_SCRIPT_PATH; $s=[System.IO.File]::ReadAllText($scriptPath); Invoke-Expression $s"
 
 :: Anti-Vanishing Catch-all (Keeps window open if any error occurred)
 if %errorlevel% neq 0 (
@@ -27,14 +28,55 @@ exit /b %errorlevel%
 # ==============================================================================
 
 $Host.UI.RawUI.WindowTitle = "ns-3 Automated Simulation Suite - BSCS Computer Networks"
-$scriptPath = $MyInvocation.MyCommand.Path
-if (-not $scriptPath) { $scriptPath = "$PWD\INSTALL_ALL_ns3.bat" }
+
+# Determine script path and working directory
+$scriptPath = $env:NS3_SCRIPT_PATH
+if (-not $scriptPath) { $scriptPath = $MyInvocation.MyCommand.Path }
+if (-not $scriptPath -or -not (Test-Path $scriptPath)) {
+    # If run in-memory via web runner (irm ... | iex), establish clean local workspace
+    $defaultDir = "C:\ns3-setup"
+    if (-not (Test-Path $defaultDir)) { New-Item -ItemType Directory -Path $defaultDir -Force | Out-Null }
+    $scriptPath = Join-Path $defaultDir "INSTALL_ALL_ns3.bat"
+    if (-not (Test-Path $scriptPath)) {
+        try {
+            Invoke-RestMethod -Uri "https://raw.githubusercontent.com/qamarabbas-024/ns3-setup-for-window-10-11/main/INSTALL_ALL_ns3.bat" -OutFile $scriptPath
+            Unblock-File -Path $scriptPath -ErrorAction SilentlyContinue
+        } catch {}
+    }
+}
 $scriptDir = Split-Path -Parent $scriptPath
 
-# 0. Self-Unblock current directory (Removes WhatsApp / Internet Mark-of-the-Web)
+# 0. Self-Unblock current directory (Removes Mark-of-the-Web to prevent Smart App Control blocks)
 try {
-    Get-ChildItem -Path $scriptDir -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
+    if (Test-Path $scriptPath) { Unblock-File -Path $scriptPath -ErrorAction SilentlyContinue }
+    if (Test-Path $scriptDir) { Get-ChildItem -Path $scriptDir -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue }
 } catch {}
+
+# Windows Sandbox Environment Detection
+$isSandbox = ($env:USERNAME -eq "WDAGUtilityAccount") -or ((Get-CimInstance Win32_ComputerSystem).Model -eq "Virtual Machine" -and (Get-CimInstance Win32_ComputerSystem).Manufacturer -match "Microsoft")
+if ($isSandbox) {
+    Clear-Host
+    Write-Host "==============================================================================" -ForegroundColor Yellow
+    Write-Host "               [!] WINDOWS SANDBOX ENVIRONMENT DETECTED                       " -ForegroundColor Yellow
+    Write-Host "==============================================================================" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  You are currently testing inside Windows Sandbox (WDAGUtilityAccount)." -ForegroundColor White
+    Write-Host ""
+    Write-Host "  IMPORTANT NOTICE FOR WINDOWS SANDBOX:" -ForegroundColor Yellow
+    Write-Host "    • Windows Sandbox does NOT have nested virtualization enabled." -ForegroundColor Gray
+    Write-Host "      Windows Subsystem for Linux (WSL2) cannot run inside Sandbox." -ForegroundColor Gray
+    Write-Host "    • Windows Sandbox is temporary: all files will be discarded on close." -ForegroundColor Gray
+    Write-Host "    • To install ns-3 for your coursework, please run this installer" -ForegroundColor White
+    Write-Host "      directly on your physical Windows 10/11 laptop (outside Sandbox)!" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  Select an option:" -ForegroundColor White
+    Write-Host "    [1] Continue with Pre-Flight Hardware Audit (Diagnostics Demo)" -ForegroundColor Cyan
+    Write-Host "    [2] Exit Sandbox Installer" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "==============================================================================" -ForegroundColor Yellow
+    $sbChoice = Read-Host "Enter choice [1 or 2, default: 1]"
+    if ($sbChoice -eq "2") { exit 0 }
+}
 
 # 1. Administrator Check & Anti-Vanishing UAC Wrapper
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -50,7 +92,18 @@ if (-not $isAdmin) {
     Write-Host ""
     Write-Host "==============================================================================" -ForegroundColor Cyan
     
-    Start-Process cmd.exe -ArgumentList "/k `"`"$scriptPath`"`"" -Verb RunAs
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "cmd.exe"
+    $psi.Arguments = "/k `"`"$scriptPath`"`""
+    $psi.Verb = "RunAs"
+    $psi.UseShellExecute = $true
+    try {
+        [System.Diagnostics.Process]::Start($psi) | Out-Null
+    } catch {
+        Write-Host "  [!] Administrator permission was declined or cancelled." -ForegroundColor Red
+        Write-Host "  Please right-click INSTALL_ALL_ns3.bat and choose 'Run as administrator'." -ForegroundColor Yellow
+        pause
+    }
     exit 0
 }
 
@@ -83,11 +136,20 @@ function Show-ControlCenter {
         switch ($choice) {
             "1" {
                 $termBat = Join-Path $scriptDir "open_ns3_terminal.bat"
-                if (Test-Path $termBat) { Start-Process $termBat } else { wsl.exe -d Ubuntu -e bash -lic "cd ~/workspace/ns-3-dev; exec bash" }
+                if (Test-Path $termBat) {
+                    Start-Process $termBat
+                } else {
+                    Start-Process cmd.exe -ArgumentList "/k wsl.exe -d Ubuntu -e bash -lic `"cd ~/workspace/ns-3-dev 2>/dev/null || cd ~; exec bash`""
+                }
                 exit 0
             }
             "2" {
-                wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && code ."
+                $codeBat = Join-Path $scriptDir "open_ns3_vscode.bat"
+                if (Test-Path $codeBat) {
+                    Start-Process $codeBat
+                } else {
+                    wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && code ."
+                }
                 exit 0
             }
             "3" {
@@ -195,14 +257,17 @@ if %errorlevel% neq 0 (
 
 # 2. Fast Non-Blocking Re-entry Check (Checks if ns-3 already installed)
 $hasWSL = (Get-Command wsl.exe -ErrorAction SilentlyContinue) -ne $null
-if ($hasWSL) {
-    $rawDistros = (wsl.exe -l -q 2>$null)
-    if ($rawDistros) {
-        $distros = ($rawDistros -replace "`0", "")
-        if ($distros -match "Ubuntu") {
-            $checkReady = wsl.exe -d Ubuntu bash -c "[ -f ~/workspace/ns-3-dev/ns3 ] && echo READY" 2>$null
-            if ($checkReady -match "READY") {
-                Show-ControlCenter
+if ($hasWSL -and -not $isSandbox) {
+    $lxssService = Get-Service -Name LxssManager -ErrorAction SilentlyContinue
+    if ($lxssService) {
+        $rawDistros = (wsl.exe -l -q 2>$null)
+        if ($rawDistros) {
+            $distros = ($rawDistros -replace "`0", "")
+            if ($distros -match "Ubuntu") {
+                $checkReady = wsl.exe -d Ubuntu bash -c "[ -f ~/workspace/ns-3-dev/ns3 ] && echo READY" 2>$null
+                if ($checkReady -match "READY") {
+                    Show-ControlCenter
+                }
             }
         }
     }
@@ -372,6 +437,26 @@ if (-not $allPass) {
 
 Write-Host "   ALL PRE-FLIGHT AUDIT CHECKS PASSED! Your computer is 100% ready." -ForegroundColor Green
 Write-Host ""
+
+if ($isSandbox) {
+    Write-Host "==============================================================================" -ForegroundColor Yellow
+    Write-Host "     [DEMO COMPLETE] HARDWARE & PRE-FLIGHT AUDIT PASSED IN SANDBOX!           " -ForegroundColor Green
+    Write-Host "==============================================================================" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  All Pre-Flight diagnostic checks completed with 100% success!" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  As noted earlier, Windows Subsystem for Linux (WSL2) cannot be initialized" -ForegroundColor Yellow
+    Write-Host "  inside Windows Sandbox because Sandbox does not support nested virtualization." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  NEXT STEP TO COMPLETE FULL SETUP:" -ForegroundColor Cyan
+    Write-Host "  Run this installer on your physical host Windows 10/11 laptop (outside Sandbox)." -ForegroundColor White
+    Write-Host "  Everything is verified and ready for full installation on your real PC!" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  Press Enter to exit the Sandbox test..." -ForegroundColor Gray
+    [void][Console]::ReadLine()
+    exit 0
+}
+
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host "  Press any key to proceed with installation..." -ForegroundColor Yellow
 Write-Host "==============================================================================" -ForegroundColor Cyan
@@ -456,6 +541,7 @@ Write-Host "====================================================================
 Write-Host "  [Step 2/6] Configuring Ubuntu User Account and Password...                   " -ForegroundColor Cyan
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host ""
+Write-Host "  [*] Checking Ubuntu user accounts and permissions..." -ForegroundColor Yellow
 
 $existingUser = (wsl.exe -d Ubuntu -u root bash -c "id -un 1000 2>/dev/null || echo NONE" 2>$null).Trim()
 if ($existingUser -eq "NONE" -or -not $existingUser) {

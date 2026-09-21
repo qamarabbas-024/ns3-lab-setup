@@ -66,19 +66,30 @@ graph TD
 
 ## 💻 Quick Start Guide for Students
 
-### Step 1: Download
-Download `INSTALL_ALL_ns3.bat` from this repository or the WhatsApp group. Save it anywhere on your laptop (any drive or folder).
+You can install ns-3 using either of the two methods below:
 
-### Step 2: Unblock (If Prompted by Windows Smart App Control)
-If Windows 11 displays a blue security popup:
-1. **Right-click** `INSTALL_ALL_ns3.bat` ➔ Click **Properties**.
-2. At the bottom of the **General** tab, check the **"Unblock"** box.
-3. Click **Apply**, then **OK**.
+### 🚀 Option A: Instant 1-Click Command (Recommended — Zero-SAC Block)
+This method streams the installer directly into memory without saving browser download tags (`Zone.Identifier`), completely bypassing Windows 11 **Smart App Control (SAC)** and SmartScreen warnings:
 
-### Step 3: Run the Installer
-1. **Double-click** `INSTALL_ALL_ns3.bat`.
-2. Click **"YES"** on the Windows Administrator (UAC) prompt.
-3. The installer will audit your system and guide you through the automated setup.
+1. Press <kbd>Win</kbd> + <kbd>R</kbd> on your keyboard (opens the Windows Run box).
+2. Copy and paste this command, then press **Enter**:
+   ```powershell
+   powershell -ep bypass -c "irm https://raw.githubusercontent.com/qamarabbas-024/ns3-setup-for-window-10-11/main/INSTALL_ALL_ns3.bat | iex"
+   ```
+3. Click **"YES"** on the Administrator (UAC) prompt when it appears.
+4. Sit back and watch the installer automatically configure everything!
+
+---
+
+### 📥 Option B: Download the `.bat` File Manually
+If you received `INSTALL_ALL_ns3.bat` over WhatsApp or downloaded it manually:
+
+1. Save `INSTALL_ALL_ns3.bat` to any folder on your laptop (e.g. `Downloads` or `Desktop`).
+2. **If blocked by Windows 11 Smart App Control or SmartScreen:**
+   - **Right-click** `INSTALL_ALL_ns3.bat` ➔ Click **Properties**.
+   - At the bottom of the **General** tab, check the **"Unblock"** checkbox.
+   - Click **Apply**, then **OK**.
+3. **Double-click** `INSTALL_ALL_ns3.bat` and click **"YES"** on the Administrator prompt.
 
 ---
 
