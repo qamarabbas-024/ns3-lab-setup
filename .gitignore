@@ -12,6 +12,8 @@ install_log.txt
 ns3_audit_*.ps1
 ns3_gen_shortcuts_*.ps1
 .ns3_setup_state
+open_ns3_terminal.bat
+open_ns3_vscode.bat
 
 # Office Temp Files
 ~$*

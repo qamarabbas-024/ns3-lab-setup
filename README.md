@@ -4,7 +4,7 @@
 [![WSL2 Ubuntu](https://img.shields.io/badge/WSL2-Ubuntu%20Linux-E95420?logo=ubuntu&logoColor=white)](https://ubuntu.com)
 [![ns-3 Simulator](https://img.shields.io/badge/ns--3-Network%20Simulator%203-00599C?logo=c%2B%2B&logoColor=white)](https://www.nsnam.org)
 [![VS Code Remote](https://img.shields.io/badge/VS%20Code-WSL%20Integrated-007ACC?logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com)
-[![BSCS Semester 3](https://img.shields.io/badge/BSCS%202025--2029-Computer%20Networks-green)](https://github.com/qamarabbas-024)
+[![Author](https://img.shields.io/badge/Author-Qamar%20Abbas-blue)](https://github.com/qamarabbas-024)
 
 > **Prepared with care for Students**  
 > *Facilitated and engineered by Qamar Abbas*
@@ -131,8 +131,7 @@ Whenever you double-click `INSTALL_ALL_ns3.bat` after installation, it automatic
 ```text
 ==============================================================================
                     ns-3 SIMULATION CONTROL CENTER
-    Computer Networks Lab (Lab 01) - BSCS Department [Semester 3]
-     Prepared with care for BSCS Batch 2025-2029 by Qamar Abbas
+        Created by Qamar Abbas
 ==============================================================================
 
   Your ns-3 simulation environment is fully installed and operational!
@@ -172,5 +171,5 @@ If the Pre-Flight audit indicates that **Hardware Virtualization** is disabled, 
 ## 📄 License & Attribution
 
 - **Environment:** [Network Simulator 3 (ns-3)](https://www.nsnam.org/) licensed under GNU GPLv2.
-- **Author:** Prepared with care for the **BSCS Department (Batch 2025–2029)** by **Qamar Abbas**.
+- **Author:** Created by **Qamar Abbas**.
 - Intended for educational and laboratory use in academic networking courses.
