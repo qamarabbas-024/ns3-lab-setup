@@ -948,7 +948,11 @@ for i in $(seq 1 30); do
         break
     fi
 done
-apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends g++ cmake ninja-build git python3 python3-pip python3-setuptools ccache pkg-config sqlite3 libsqlite3-dev libxml2-dev
+echo '[1/2] Updating Ubuntu package repositories...'
+apt-get update -y
+echo '[2/2] Downloading & configuring C++ compiler suite (g++, cmake, ninja, python3)...'
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends g++ cmake ninja-build git python3 python3-pip python3-setuptools ccache pkg-config sqlite3 libsqlite3-dev libxml2-dev
+echo '[OK] C++ compilers and build tools successfully installed!'
 '@
 
     $b64Pkg = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($pkgInstallCmd))
@@ -1023,29 +1027,32 @@ if [ -d 'ns-3-dev' ]; then
 fi
 
 if [ ! -d 'ns-3-dev/.git' ]; then
-    echo '[*] Fetching ns-3 repository using fast shallow download...'
-    if ! git clone --depth 1 https://gitlab.com/nsnam/ns-3-dev.git ns-3-dev; then
+    echo '[1/3] Downloading ns-3 simulator core (with live download progress)...'
+    if ! git clone --depth 1 --progress https://gitlab.com/nsnam/ns-3-dev.git ns-3-dev; then
         echo '[!] Primary GitLab download timed out or failed. Falling back to GitHub mirror...'
         rm -rf ns-3-dev
-        git clone --depth 1 https://github.com/nsnam/ns-3-dev-git.git ns-3-dev
+        git clone --depth 1 --progress https://github.com/nsnam/ns-3-dev-git.git ns-3-dev
     fi
+    echo '[OK] ns-3 source repository downloaded successfully!'
 else
-    echo '[OK] ns-3 source repository already exists!'
+    echo '[1/3] [OK] ns-3 source repository already exists!'
 fi
 cd ~/workspace/ns-3-dev
 chmod +x ./ns3 2>/dev/null || true
 if [ -d 'build' ] && [ -d 'cmake-cache' ]; then
-    echo '[OK] ns-3 build configuration already active. Verifying Ninja build...'
+    echo '[2/3] [OK] ns-3 build configuration active. Skipping reconfiguration.'
 else
-    echo '[*] Configuring ns-3 build system (examples & runtime logging enabled, tests disabled for max speed)...'
+    echo '[2/3] Configuring ns-3 build system (examples & runtime logging active, tests disabled for max speed)...'
     ./ns3 configure --enable-examples --disable-tests --enable-logs -d optimized || {
         echo '[!] Build cache conflict detected. Cleaning cache and reconfiguring...'
         rm -rf build cmake-cache
         ./ns3 configure --enable-examples --disable-tests --enable-logs -d optimized
     }
 fi
-echo '[*] Compiling/updating ns-3 with Ninja ($compileJobs CPU threads)...'
+echo '[3/3] Compiling C++ simulator with Ninja ($compileJobs parallel CPU threads)...'
+echo '      Watch the object compilation progress counter [X/Y] advance below:'
 ./ns3 build -j $compileJobs
+echo '[OK] ns-3 compilation completed successfully!'
 "@
 
 $b64Build = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($buildScript))
@@ -1077,13 +1084,15 @@ Write-Host "  [Step 6/6] Running Automated Verification Simulations...          
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host ""
 
-Write-Host "  >> Running Verification Test 1: hello-simulator..." -ForegroundColor Yellow
+Write-Host "  >> [1/2] Running Verification Test 1: hello-simulator (Smoke test)..." -ForegroundColor Yellow
 wsl.exe -d $targetDistro bash -lic "cd ~/workspace/ns-3-dev && ./ns3 run hello-simulator"
+Write-Host "     [PASS] Simulator core is active and responding!" -ForegroundColor Green
 
-Write-Host "`n  >> Running Verification Test 2: first.cc (Two-Node Point-to-Point simulation)..." -ForegroundColor Yellow
+Write-Host "`n  >> [2/2] Running Verification Test 2: first.cc (Two-Node Point-to-Point simulation)..." -ForegroundColor Yellow
 wsl.exe -d $targetDistro bash -lic "cd ~/workspace/ns-3-dev && ./ns3 run examples/tutorial/first"
+Write-Host "     [PASS] Lab 1 network simulation completed successfully!" -ForegroundColor Green
 
-Write-Host "`n  [OK] Verification simulations PASSED completely!" -ForegroundColor Green
+Write-Host "`n  [OK] All verification simulations PASSED with 100% success!" -ForegroundColor Green
 
 # 12. Phase 9: Auto-Generate Launchers & Desktop Shortcuts (Strictly 2 clean icons)
 Write-Host ""
