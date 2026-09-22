@@ -172,12 +172,10 @@ if (-not $scriptPath -or -not (Test-Path $scriptPath)) {
         if (-not (Test-Path $defaultDir)) { New-Item -ItemType Directory -Path $defaultDir -Force | Out-Null }
     }
     $scriptPath = Join-Path $defaultDir "INSTALL_ALL_ns3.bat"
-    if (-not (Test-Path $scriptPath)) {
-        try {
-            Invoke-RestMethod -Uri "https://raw.githubusercontent.com/qamarabbas-024/ns3-lab-setup/main/INSTALL_ALL_ns3.bat" -OutFile $scriptPath
-            Unblock-File -Path $scriptPath -ErrorAction SilentlyContinue
-        } catch {}
-    }
+    try {
+        Invoke-RestMethod -Uri "https://raw.githubusercontent.com/qamarabbas-024/ns3-lab-setup/main/INSTALL_ALL_ns3.bat" -OutFile $scriptPath
+        Unblock-File -Path $scriptPath -ErrorAction SilentlyContinue
+    } catch {}
 }
 $scriptDir = Split-Path -Parent $scriptPath
 
