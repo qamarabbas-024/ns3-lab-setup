@@ -92,6 +92,53 @@ function Get-SystemDisks {
     }
 }
 
+# Function to scan all drives and registry for existing ns-3 or WSL installations
+function Get-ExistingInstallations {
+    $results = [PSCustomObject]@{
+        WSLDistroPath  = $null
+        WSLDrive       = $null
+        ExistingRoots  = @()
+        PreferredDrive = $null
+    }
+    
+    # 1. Inspect WSL Registry for registered BasePath
+    try {
+        $keys = Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss -ErrorAction SilentlyContinue
+        foreach ($k in $keys) {
+            $p = Get-ItemProperty $k.PSPath -ErrorAction SilentlyContinue
+            if ($p.DistributionName -match "^Ubuntu" -or $p.DistributionName -match "^Debian") {
+                $bp = ($p.BasePath -replace "^\\\\\?\\", "").Trim()
+                if ($bp -and (Test-Path $bp)) {
+                    $results.WSLDistroPath = $bp
+                    $results.WSLDrive = ($bp -split ":")[0].ToUpper() + ":"
+                    $results.PreferredDrive = ($bp -split ":")[0].ToUpper()
+                    break
+                }
+            }
+        }
+    } catch {}
+
+    # 2. Check all physical fixed drives for existing \ns3-setup or \ns3-wsl
+    try {
+        $drives = Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 }
+        foreach ($d in $drives) {
+            $letter = $d.DeviceID.ToUpper()
+            $setupDir = Join-Path $letter "ns3-setup"
+            $wslDir = Join-Path $letter "ns3-wsl"
+            if (Test-Path $setupDir) {
+                $results.ExistingRoots += $setupDir
+                if (-not $results.PreferredDrive) { $results.PreferredDrive = $letter.TrimEnd(':') }
+            }
+            if ((Test-Path $wslDir) -and ($results.WSLDrive -ne $letter)) {
+                $results.ExistingRoots += $wslDir
+                if (-not $results.PreferredDrive) { $results.PreferredDrive = $letter.TrimEnd(':') }
+            }
+        }
+    } catch {}
+
+    return $results
+}
+
 # Early Hardware Specs & Turbo Concurrency Calculation
 $cpuThreads = [Environment]::ProcessorCount
 if (-not $cpuThreads -or $cpuThreads -lt 2) { $cpuThreads = 2 }
@@ -408,17 +455,14 @@ if %errorlevel% neq 0 (
     } catch {}
 }
 
-# 2. Fast Non-Blocking Re-entry Check (Checks if ns-3 already installed)
+# 2. Fast Non-Blocking Re-entry Check (Checks if ns-3 already installed & operational)
 $hasWSL = (Get-Command wsl.exe -ErrorAction SilentlyContinue) -ne $null
 if ($hasWSL -and -not $isSandbox) {
-    $lxssService = Get-Service -Name LxssManager -ErrorAction SilentlyContinue
-    if ($lxssService) {
-        $detectedDistro = Get-TargetWSLDistro
-        if ($detectedDistro) {
-            $checkReady = wsl.exe -d $detectedDistro bash -c "[ -f ~/workspace/ns-3-dev/ns3 ] && echo READY" 2>$null
-            if ($checkReady -match "READY") {
-                Show-ControlCenter -Distro $detectedDistro
-            }
+    $detectedDistro = Get-TargetWSLDistro
+    if ($detectedDistro) {
+        $checkReady = wsl.exe -d $detectedDistro bash -c "cd ~/workspace/ns-3-dev 2>/dev/null && [ -f ns3 ] && ([ -d build ] || [ -d cmake-cache ]) && echo READY" 2>$null
+        if ($checkReady -match "READY") {
+            Show-ControlCenter -Distro $detectedDistro
         }
     }
 }
@@ -641,8 +685,11 @@ Write-Host "  ------------------------------------------------------------------
 Write-Host "   DRIVE   FREE SPACE       TOTAL SPACE      RECOMMENDATION / STATUS           " -ForegroundColor Cyan
 Write-Host "  ------------------------------------------------------------------------------" -ForegroundColor DarkGray
 
+$existingInstall = Get-ExistingInstallations
 $recommendedLetter = "C"
-if ($cDriveObj -and $cDriveObj.HasSpace) {
+if ($existingInstall.PreferredDrive) {
+    $recommendedLetter = $existingInstall.PreferredDrive
+} elseif ($cDriveObj -and $cDriveObj.FreeGB -ge 15) {
     $recommendedLetter = "C"
 } elseif ($bestDisk) {
     $recommendedLetter = $bestDisk.Letter
@@ -651,7 +698,10 @@ if ($cDriveObj -and $cDriveObj.HasSpace) {
 foreach ($d in $allDisks) {
     $statusStr = ""
     $color = "White"
-    if ($d.Letter -eq $recommendedLetter) {
+    if ($existingInstall.PreferredDrive -and $d.Letter -eq $existingInstall.PreferredDrive) {
+        $statusStr = "[EXISTING SETUP] Already configured on this drive"
+        $color = "Green"
+    } elseif ($d.Letter -eq $recommendedLetter) {
         $statusStr = "[RECOMMENDED] Best Fit for Setup"
         $color = "Green"
     } elseif ($d.HasSpace) {
@@ -758,14 +808,19 @@ if ($targetDistro) {
 wsl.exe --set-version $targetDistro 2 2>$null | Out-Null
 wsl.exe --set-default-version 2 2>$null | Out-Null
 
-# Relocate WSL virtual disk to alternate partition if non-C drive selected
+# Relocate WSL virtual disk to alternate partition if non-C drive selected and not already there
 if ($chosenDrive -ne "C:" -and (Test-Path $chosenDrive)) {
-    try {
-        if (-not (Test-Path $wslMoveTarget)) { New-Item -ItemType Directory -Path $wslMoveTarget -Force | Out-Null }
-        Write-Host "  [*] Relocating Linux storage to $wslMoveTarget to preserve space on C:..." -ForegroundColor Yellow
-        wsl.exe --manage $targetDistro --move "$wslMoveTarget" 2>$null | Out-Null
-        Write-Host "  [OK] Linux storage configured on $chosenDrive!" -ForegroundColor Green
-    } catch {}
+    $currentDistroDrive = if ($existingInstall.WSLDrive) { $existingInstall.WSLDrive } else { "" }
+    if ($currentDistroDrive -eq $chosenDrive) {
+        Write-Host "  [OK] Linux storage is already located on $chosenDrive ($($existingInstall.WSLDistroPath)). Skipping relocation!" -ForegroundColor Green
+    } else {
+        try {
+            if (-not (Test-Path $wslMoveTarget)) { New-Item -ItemType Directory -Path $wslMoveTarget -Force | Out-Null }
+            Write-Host "  [*] Relocating Linux storage to $wslMoveTarget to preserve space on C:..." -ForegroundColor Yellow
+            wsl.exe --manage $targetDistro --move "$wslMoveTarget" 2>$null | Out-Null
+            Write-Host "  [OK] Linux storage configured on $chosenDrive!" -ForegroundColor Green
+        } catch {}
+    }
 }
 
 # 7. Phase 4: Ubuntu User Account & Password Configuration
@@ -858,11 +913,16 @@ if ($vscodeCmd) {
 }
 
 if ($vscodeCmd) {
-    Write-Host "  [*] Installing official Microsoft WSL extension for VS Code..." -ForegroundColor Yellow
-    try {
-        & $vscodeCmd --install-extension ms-vscode-remote.remote-wsl --force 2>$null | Out-Null
-        Write-Host "  [OK] VS Code WSL remote development extension installed!" -ForegroundColor Green
-    } catch {}
+    $extList = & $vscodeCmd --list-extensions 2>$null
+    if ($extList -match "ms-vscode-remote\.remote-wsl") {
+        Write-Host "  [OK] VS Code WSL remote development extension is already installed!" -ForegroundColor Green
+    } else {
+        Write-Host "  [*] Installing official Microsoft WSL extension for VS Code..." -ForegroundColor Yellow
+        try {
+            & $vscodeCmd --install-extension ms-vscode-remote.remote-wsl --force 2>$null | Out-Null
+            Write-Host "  [OK] VS Code WSL remote development extension installed!" -ForegroundColor Green
+        } catch {}
+    }
 }
 
 # 9. Phase 6: Ubuntu Compilers & Build Tools
@@ -871,10 +931,15 @@ Write-Host "====================================================================
 Write-Host "  [Step 4/6] Installing C++ Compilers and Build Tools inside $targetDistro...  " -ForegroundColor Cyan
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Note: This step installs g++, cmake, ninja-build, git, python3, ccache." -ForegroundColor White
-Write-Host "  Estimated duration: ~2 to 4 minutes.`n" -ForegroundColor Gray
 
-$pkgInstallCmd = @'
+$checkTools = wsl.exe -d $targetDistro bash -c "which g++ cmake ninja git python3 >/dev/null 2>&1 && echo ALREADY_INSTALLED" 2>$null
+if ($checkTools -match "ALREADY_INSTALLED") {
+    Write-Host "  [OK] All C++ compilers and build tools are already installed inside $targetDistro!" -ForegroundColor Green
+} else {
+    Write-Host "  Note: This step installs g++, cmake, ninja-build, git, python3, ccache." -ForegroundColor White
+    Write-Host "  Estimated duration: ~2 to 4 minutes.`n" -ForegroundColor Gray
+
+    $pkgInstallCmd = @'
 for i in $(seq 1 30); do
     if fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || fuser /var/lib/apt/lists/lock >/dev/null 2>&1; then
         echo "[*] Waiting for Ubuntu background updates to complete (attempt $i/30)..."
@@ -886,23 +951,24 @@ done
 apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends g++ cmake ninja-build git python3 python3-pip python3-setuptools ccache pkg-config sqlite3 libsqlite3-dev libxml2-dev
 '@
 
-$b64Pkg = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($pkgInstallCmd))
-wsl.exe -d $targetDistro -u root bash -c "echo '$b64Pkg' | base64 -d | bash"
-$pkgSuccess = ($LASTEXITCODE -eq 0)
-
-if (-not $pkgSuccess) {
-    Write-Host "`n  [!] Retrying package installation once..." -ForegroundColor Yellow
+    $b64Pkg = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($pkgInstallCmd))
     wsl.exe -d $targetDistro -u root bash -c "echo '$b64Pkg' | base64 -d | bash"
     $pkgSuccess = ($LASTEXITCODE -eq 0)
-}
 
-if (-not $pkgSuccess) {
-    Write-Host "`n  [!] Failed to install C++ compilers inside $targetDistro." -ForegroundColor Red
-    Write-Host "  Please check your internet connection and run this installer again." -ForegroundColor White
-    Wait-ForEnter
-    exit 1
+    if (-not $pkgSuccess) {
+        Write-Host "`n  [!] Retrying package installation once..." -ForegroundColor Yellow
+        wsl.exe -d $targetDistro -u root bash -c "echo '$b64Pkg' | base64 -d | bash"
+        $pkgSuccess = ($LASTEXITCODE -eq 0)
+    }
+
+    if (-not $pkgSuccess) {
+        Write-Host "`n  [!] Failed to install C++ compilers inside $targetDistro." -ForegroundColor Red
+        Write-Host "  Please check your internet connection and run this installer again." -ForegroundColor White
+        Wait-ForEnter
+        exit 1
+    }
+    Write-Host "`n  [OK] All C++ compilers and build tools successfully installed!" -ForegroundColor Green
 }
-Write-Host "`n  [OK] All C++ compilers and build tools successfully installed!" -ForegroundColor Green
 
 # 10. Phase 7: Fetch & Compile ns-3 Simulator Core
 Write-Host ""
@@ -968,13 +1034,17 @@ else
 fi
 cd ~/workspace/ns-3-dev
 chmod +x ./ns3 2>/dev/null || true
-echo '[*] Configuring ns-3 build system (examples & runtime logging enabled, tests disabled for max speed)...'
-./ns3 configure --enable-examples --disable-tests --enable-logs -d optimized || {
-    echo '[!] Build cache conflict detected. Cleaning cache and reconfiguring...'
-    rm -rf build
-    ./ns3 configure --enable-examples --disable-tests --enable-logs -d optimized
-}
-echo '[*] Starting compilation with Ninja ($compileJobs CPU threads)...'
+if [ -d 'build' ] && [ -d 'cmake-cache' ]; then
+    echo '[OK] ns-3 build configuration already active. Verifying Ninja build...'
+else
+    echo '[*] Configuring ns-3 build system (examples & runtime logging enabled, tests disabled for max speed)...'
+    ./ns3 configure --enable-examples --disable-tests --enable-logs -d optimized || {
+        echo '[!] Build cache conflict detected. Cleaning cache and reconfiguring...'
+        rm -rf build cmake-cache
+        ./ns3 configure --enable-examples --disable-tests --enable-logs -d optimized
+    }
+fi
+echo '[*] Compiling/updating ns-3 with Ninja ($compileJobs CPU threads)...'
 ./ns3 build -j $compileJobs
 "@
 
