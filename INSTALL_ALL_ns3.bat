@@ -24,7 +24,7 @@ exit /b %errorlevel%
 
 # ==============================================================================
 # Pure PowerShell Core Engine (Modern, Robust, Multi-Drive, & Self-Healing)
-# Prepared with care for BSCS Batch 2025-2029 by Qamar Abbas
+# Created by Qamar Abbas
 # ==============================================================================
 
 # Force TLS 1.2 for all HTTPS operations (ensures compatibility with older Windows 10)
@@ -217,7 +217,7 @@ if (-not $isAdmin) {
     Clear-Host
     Write-Host "==============================================================================" -ForegroundColor Cyan
     Write-Host "                    ADMINISTRATOR PERMISSION REQUIRED                         " -ForegroundColor Cyan
-    Write-Host "          Computer Networks Lab - BSCS Department [Semester 3]                " -ForegroundColor Cyan
+    Write-Host "                            Created by Qamar Abbas                            " -ForegroundColor Yellow
     Write-Host "==============================================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  Windows requires Administrator permission to configure WSL2 and ns-3." -ForegroundColor Yellow
@@ -247,8 +247,7 @@ function Show-ControlCenter {
         Clear-Host
         Write-Host "==============================================================================" -ForegroundColor Cyan
         Write-Host "                         ns-3 SIMULATION CONTROL CENTER                       " -ForegroundColor Cyan
-        Write-Host "         Computer Networks Lab (Lab 01) - BSCS Department [Semester 3]        " -ForegroundColor Cyan
-        Write-Host "          Prepared with care for BSCS Batch 2025-2029 by Qamar Abbas          " -ForegroundColor Yellow
+        Write-Host "                            Created by Qamar Abbas                            " -ForegroundColor Yellow
         Write-Host "==============================================================================" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "  Your ns-3 simulation environment is fully installed and operational!" -ForegroundColor Green
@@ -353,13 +352,12 @@ function New-DesktopShortcuts {
 @echo off
 setlocal
 cd /d "%~dp0"
-title ns-3 Linux Terminal - Computer Networks Lab
+title ns-3 Linux Terminal - Created by Qamar Abbas
 color 0B
 
 echo ======================================================================
 echo      WELCOME TO YOUR ns-3 NETWORK SIMULATION ENVIRONMENT!
-echo      Computer Networks Lab (Lab 01) - BSCS Department [Semester 3]
-echo       Prepared with care for BSCS Students by Qamar Abbas
+echo                   Created by Qamar Abbas
 echo ======================================================================
 echo  Current Directory: ~/workspace/ns-3-dev
 echo.
@@ -391,7 +389,7 @@ if %errorlevel% neq 0 (
 @echo off
 setlocal
 cd /d "%~dp0"
-title ns-3 VS Code Workspace - Computer Networks Lab
+title ns-3 VS Code Workspace - Created by Qamar Abbas
 color 0A
 
 if exist "%LOCALAPPDATA%\Programs\Microsoft VS Code\bin" (
@@ -406,8 +404,7 @@ if exist "%ProgramFiles(x86)%\Microsoft VS Code\bin" (
 
 echo ======================================================================
 echo   OPENING ns-3 IN VISUAL STUDIO CODE [WSL $TargetDistro]
-echo   Computer Networks Lab (Lab 01) - BSCS Department [Semester 3]
-echo    Prepared with care for BSCS Students by Qamar Abbas
+echo                Created by Qamar Abbas
 echo ======================================================================
 echo.
 echo [*] Connecting VS Code to Linux workspace: ~/workspace/ns-3-dev ...
@@ -440,7 +437,7 @@ if %errorlevel% neq 0 (
         $sc1.TargetPath = (Join-Path $TargetDir "open_ns3_terminal.bat")
         $sc1.WorkingDirectory = $TargetDir
         $sc1.IconLocation = "cmd.exe,0"
-        $sc1.Description = "Open ns-3 Linux Terminal (Computer Networks Lab)"
+        $sc1.Description = "Open ns-3 Linux Terminal - Created by Qamar Abbas"
         $sc1.Save()
 
         $lnk2 = Join-Path $desktop "ns-3 VS Code.lnk"
@@ -448,7 +445,7 @@ if %errorlevel% neq 0 (
         $sc2.TargetPath = (Join-Path $TargetDir "open_ns3_vscode.bat")
         $sc2.WorkingDirectory = $TargetDir
         $sc2.IconLocation = "shell32.dll,220"
-        $sc2.Description = "Open ns-3 in Visual Studio Code (Computer Networks Lab)"
+        $sc2.Description = "Open ns-3 in Visual Studio Code - Created by Qamar Abbas"
         $sc2.Save()
     } catch {}
 }
@@ -469,8 +466,7 @@ if ($hasWSL -and -not $isSandbox) {
 Clear-Host
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host "                 ns-3 AUTOMATED ONE-CLICK INSTALLATION SUITE                  " -ForegroundColor Cyan
-Write-Host "             Computer Networks Lab (Lab 01) - BSCS Department                 " -ForegroundColor Cyan
-Write-Host "       Prepared with care for BSCS Batch 2025-2029 by Qamar Abbas             " -ForegroundColor Yellow
+Write-Host "                            Created by Qamar Abbas                            " -ForegroundColor Yellow
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Welcome! This installer automatically configures your complete ns-3" -ForegroundColor White
@@ -1101,8 +1097,7 @@ New-DesktopShortcuts -TargetDir $scriptDir -TargetDistro $targetDistro
 Clear-Host
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host "             ns-3 SIMULATION ENVIRONMENT SUCCESSFULLY INSTALLED!              " -ForegroundColor Green
-Write-Host "         Computer Networks Lab (Lab 01) - BSCS Department [Semester 3]        " -ForegroundColor Cyan
-Write-Host "          Prepared with care for BSCS Batch 2025-2029 by Qamar Abbas          " -ForegroundColor Yellow
+Write-Host "                            Created by Qamar Abbas                            " -ForegroundColor Yellow
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Summary of Components Configured:" -ForegroundColor White
