@@ -23,7 +23,7 @@ exit /b %errorlevel%
 #>
 
 # ==============================================================================
-# Pure PowerShell Core Engine (Modern, Robust, & Bulletproof)
+# Pure PowerShell Core Engine (Modern, Robust, Multi-Drive, & Self-Healing)
 # Prepared with care for BSCS Batch 2025-2029 by Qamar Abbas
 # ==============================================================================
 
@@ -46,27 +46,47 @@ function Wait-ForEnter {
     }
 }
 
-# Determine script path and working directory
-$scriptPath = $env:NS3_SCRIPT_PATH
-if (-not $scriptPath) { $scriptPath = $MyInvocation.MyCommand.Path }
-if (-not $scriptPath -or -not (Test-Path $scriptPath)) {
-    # If run in-memory via web runner (irm ... | iex), establish clean local workspace
-    $defaultDir = Join-Path $env:SystemDrive "ns3-setup"
+# Function to dynamically resolve the registered WSL distribution name
+function Get-TargetWSLDistro {
     try {
-        if (-not (Test-Path $defaultDir)) { New-Item -ItemType Directory -Path $defaultDir -Force | Out-Null }
+        $raw = wsl.exe -l -q 2>$null
+        if (-not $raw) { return $null }
+        $distros = @($raw | ForEach-Object { ($_ -replace "`0", "").Trim() } | Where-Object { $_ -ne "" })
+        if ($distros.Count -eq 0) { return $null }
+        
+        # 1. Look for exact "Ubuntu"
+        if ($distros -contains "Ubuntu") { return "Ubuntu" }
+        
+        # 2. Look for versioned Ubuntu (Ubuntu-24.04, Ubuntu-22.04, Ubuntu-20.04)
+        $uDistro = $distros | Where-Object { $_ -match "^Ubuntu" } | Select-Object -First 1
+        if ($uDistro) { return $uDistro }
+        
+        # 3. Look for Debian
+        if ($distros -contains "Debian") { return "Debian" }
+        
+        # 4. Any other non-docker distro
+        $other = $distros | Where-Object { $_ -notmatch "docker" } | Select-Object -First 1
+        if ($other) { return $other }
+    } catch {}
+    return $null
+}
+
+# Function to scan all physical fixed disk partitions
+function Get-SystemDisks {
+    try {
+        return @(Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 } | ForEach-Object {
+            [PSCustomObject]@{
+                Letter   = $_.DeviceID.TrimEnd(':').ToUpper()
+                DeviceID = $_.DeviceID.ToUpper()
+                FreeGB   = [math]::Round($_.FreeSpace / 1GB, 1)
+                TotalGB  = [math]::Round($_.Size / 1GB, 1)
+                HasSpace = ($_.FreeSpace / 1GB -ge 15)
+            }
+        })
     } catch {
-        $defaultDir = Join-Path $env:USERPROFILE "ns3-setup"
-        if (-not (Test-Path $defaultDir)) { New-Item -ItemType Directory -Path $defaultDir -Force | Out-Null }
-    }
-    $scriptPath = Join-Path $defaultDir "INSTALL_ALL_ns3.bat"
-    if (-not (Test-Path $scriptPath)) {
-        try {
-            Invoke-RestMethod -Uri "https://raw.githubusercontent.com/qamarabbas-024/ns3-lab-setup/main/INSTALL_ALL_ns3.bat" -OutFile $scriptPath
-            Unblock-File -Path $scriptPath -ErrorAction SilentlyContinue
-        } catch {}
+        return @()
     }
 }
-$scriptDir = Split-Path -Parent $scriptPath
 
 # Early Hardware Specs & Turbo Concurrency Calculation
 $cpuThreads = [Environment]::ProcessorCount
@@ -84,6 +104,31 @@ if ($totalRamGB -lt 4) {
 } else {
     $compileJobs = $cpuThreads
 }
+
+# Determine script path and working directory
+$scriptPath = $env:NS3_SCRIPT_PATH
+if (-not $scriptPath) { $scriptPath = $MyInvocation.MyCommand.Path }
+if (-not $scriptPath -or -not (Test-Path $scriptPath)) {
+    # If run in-memory via web runner (irm ... | iex), establish clean local workspace
+    $allDisksInit = Get-SystemDisks
+    $bestDiskInit = $allDisksInit | Sort-Object -Property FreeGB -Descending | Select-Object -First 1
+    $initDrive = if ($bestDiskInit) { "$($bestDiskInit.Letter):" } else { $env:SystemDrive }
+    $defaultDir = Join-Path $initDrive "ns3-setup"
+    try {
+        if (-not (Test-Path $defaultDir)) { New-Item -ItemType Directory -Path $defaultDir -Force | Out-Null }
+    } catch {
+        $defaultDir = Join-Path $env:USERPROFILE "ns3-setup"
+        if (-not (Test-Path $defaultDir)) { New-Item -ItemType Directory -Path $defaultDir -Force | Out-Null }
+    }
+    $scriptPath = Join-Path $defaultDir "INSTALL_ALL_ns3.bat"
+    if (-not (Test-Path $scriptPath)) {
+        try {
+            Invoke-RestMethod -Uri "https://raw.githubusercontent.com/qamarabbas-024/ns3-lab-setup/main/INSTALL_ALL_ns3.bat" -OutFile $scriptPath
+            Unblock-File -Path $scriptPath -ErrorAction SilentlyContinue
+        } catch {}
+    }
+}
+$scriptDir = Split-Path -Parent $scriptPath
 
 # 0. Self-Unblock current directory (Removes Mark-of-the-Web to prevent Smart App Control blocks)
 try {
@@ -146,8 +191,9 @@ if (-not $isAdmin) {
     exit 0
 }
 
-# Function to show Control Center
+# Function to show Simulation Control Center
 function Show-ControlCenter {
+    param([string]$Distro = "Ubuntu")
     while ($true) {
         Clear-Host
         Write-Host "==============================================================================" -ForegroundColor Cyan
@@ -157,6 +203,7 @@ function Show-ControlCenter {
         Write-Host "==============================================================================" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "  Your ns-3 simulation environment is fully installed and operational!" -ForegroundColor Green
+        Write-Host "  Active Linux Distribution: $Distro" -ForegroundColor Gray
         Write-Host ""
         Write-Host "  Please select an action:" -ForegroundColor White
         Write-Host "    [1] Launch ns-3 Linux Terminal" -ForegroundColor Cyan
@@ -178,7 +225,7 @@ function Show-ControlCenter {
                 if (Test-Path $termBat) {
                     Start-Process $termBat
                 } else {
-                    Start-Process cmd.exe -ArgumentList "/k wsl.exe -d Ubuntu -e bash -lic `"cd ~/workspace/ns-3-dev 2>/dev/null || cd ~; exec bash`""
+                    Start-Process cmd.exe -ArgumentList "/k wsl.exe -d $Distro -e bash -lic `"cd ~/workspace/ns-3-dev 2>/dev/null || cd ~; exec bash`""
                 }
                 exit 0
             }
@@ -187,37 +234,37 @@ function Show-ControlCenter {
                 if (Test-Path $codeBat) {
                     Start-Process $codeBat
                 } else {
-                    wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && code ."
+                    wsl.exe -d $Distro bash -lic "cd ~/workspace/ns-3-dev && code ."
                 }
                 exit 0
             }
             "3" {
                 Write-Host "`nRunning Lab 1 (first.cc)...`n" -ForegroundColor Yellow
-                wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && ./ns3 run examples/tutorial/first"
+                wsl.exe -d $Distro bash -lic "cd ~/workspace/ns-3-dev && ./ns3 run examples/tutorial/first"
                 Write-Host "`nPress Enter to return to menu..." -ForegroundColor Gray
                 Wait-ForEnter
             }
             "4" {
                 Write-Host "`nRunning Smoke Test (hello-simulator)...`n" -ForegroundColor Yellow
-                wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && ./ns3 run hello-simulator"
+                wsl.exe -d $Distro bash -lic "cd ~/workspace/ns-3-dev && ./ns3 run hello-simulator"
                 Write-Host "`nPress Enter to return to menu..." -ForegroundColor Gray
                 Wait-ForEnter
             }
             "5" {
                 Write-Host "`nRecompiling ns-3 code with Ninja ($compileJobs threads)...`n" -ForegroundColor Yellow
-                wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && ./ns3 build -j $compileJobs"
+                wsl.exe -d $Distro bash -lic "cd ~/workspace/ns-3-dev && ./ns3 build -j $compileJobs"
                 Write-Host "`nPress Enter to return to menu..." -ForegroundColor Gray
                 Wait-ForEnter
             }
             "6" {
-                New-DesktopShortcuts -TargetDir $scriptDir
+                New-DesktopShortcuts -TargetDir $scriptDir -TargetDistro $Distro
                 Write-Host "`n[OK] Shortcuts created on your Desktop!" -ForegroundColor Green
                 Start-Sleep -Seconds 2
             }
             "7" {
                 Write-Host "`n  [*] Cleaning ns-3 build cache and resetting configuration..." -ForegroundColor Yellow
-                wsl.exe -d Ubuntu bash -c "cd ~/workspace/ns-3-dev 2>/dev/null && rm -rf build" 2>$null
-                wsl.exe -d Ubuntu bash -c "rm -f ~/workspace/ns-3-dev/ns3" 2>$null
+                wsl.exe -d $Distro bash -c "cd ~/workspace/ns-3-dev 2>/dev/null && rm -rf build" 2>$null
+                wsl.exe -d $Distro bash -c "rm -f ~/workspace/ns-3-dev/ns3" 2>$null
                 Write-Host "  [OK] Reset complete. Restarting installation..." -ForegroundColor Green
                 Start-Sleep -Seconds 2
                 return
@@ -228,16 +275,32 @@ function Show-ControlCenter {
     }
 }
 
-# Function to generate Desktop Shortcuts and local batch files
+# Function to generate Desktop Shortcuts and local batch files (Strictly exactly 2 icons)
 function New-DesktopShortcuts {
-    param([string]$TargetDir)
+    param(
+        [string]$TargetDir,
+        [string]$TargetDistro = "Ubuntu"
+    )
     
     $desktop = [Environment]::GetFolderPath("Desktop")
     $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
     $wsh = New-Object -ComObject WScript.Shell
 
+    # Clean up duplicate or orphaned shortcuts from Public Desktop to prevent 4-icon clutter
+    try {
+        if ($publicDesktop -and (Test-Path $publicDesktop)) {
+            Remove-Item (Join-Path $publicDesktop "ns-3 Linux Terminal.lnk") -Force -ErrorAction SilentlyContinue
+            Remove-Item (Join-Path $publicDesktop "ns-3 VS Code.lnk") -Force -ErrorAction SilentlyContinue
+        }
+    } catch {}
+
+    # Clean up duplicate generic "Visual Studio Code.lnk" if created by silent install
+    try {
+        Remove-Item (Join-Path $desktop "Visual Studio Code.lnk") -Force -ErrorAction SilentlyContinue
+    } catch {}
+
     # 1. open_ns3_terminal.bat
-    $termContent = @'
+    $termContent = @"
 @echo off
 setlocal
 cd /d "%~dp0"
@@ -260,22 +323,22 @@ echo    - Exit to Windows: exit
 echo ======================================================================
 echo.
 
-wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev 2>/dev/null || cd ~; exec bash"
+wsl.exe -d $TargetDistro bash -lic "cd ~/workspace/ns-3-dev 2>/dev/null || cd ~; exec bash"
 
 if %errorlevel% neq 0 (
     echo.
     echo ======================================================================
-    echo  [!] Could not start WSL Ubuntu session.
+    echo  [!] Could not start WSL Linux session ($TargetDistro).
     echo  Error Code: %errorlevel%
     echo  If your computer just started up, please wait a moment and try again.
     echo ======================================================================
     pause
 )
-'@
+"@
     [System.IO.File]::WriteAllText((Join-Path $TargetDir "open_ns3_terminal.bat"), $termContent)
 
     # 2. open_ns3_vscode.bat
-    $codeContent = @'
+    $codeContent = @"
 @echo off
 setlocal
 cd /d "%~dp0"
@@ -293,22 +356,22 @@ if exist "%ProgramFiles(x86)%\Microsoft VS Code\bin" (
 )
 
 echo ======================================================================
-echo   OPENING ns-3 IN VISUAL STUDIO CODE [WSL UBUNTU]
+echo   OPENING ns-3 IN VISUAL STUDIO CODE [WSL $TargetDistro]
 echo   Computer Networks Lab (Lab 01) - BSCS Department [Semester 3]
 echo    Prepared with care for BSCS Students by Qamar Abbas
 echo ======================================================================
 echo.
-echo [*] Connecting VS Code to Ubuntu workspace: ~/workspace/ns-3-dev ...
+echo [*] Connecting VS Code to Linux workspace: ~/workspace/ns-3-dev ...
 
-wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && code ."
+wsl.exe -d $TargetDistro bash -lic "cd ~/workspace/ns-3-dev && code ."
 if %errorlevel% neq 0 (
     where code >nul 2>&1
     if %errorlevel% equ 0 (
-        for /f "usebackq delims=" %%u in (`wsl.exe -d Ubuntu bash -c "echo $USER"`) do set "WSL_USER=%%u"
+        for /f "usebackq delims=" %%u in (`wsl.exe -d $TargetDistro bash -c "echo `$USER"`) do set "WSL_USER=%%u"
         if defined WSL_USER (
-            code --remote wsl+Ubuntu /home/%WSL_USER%/workspace/ns-3-dev
+            code --remote wsl+$TargetDistro /home/%WSL_USER%/workspace/ns-3-dev
         ) else (
-            code --remote wsl+Ubuntu /root/workspace/ns-3-dev
+            code --remote wsl+$TargetDistro /root/workspace/ns-3-dev
         )
     ) else (
         echo.
@@ -318,33 +381,27 @@ if %errorlevel% neq 0 (
         pause
     )
 )
-'@
+"@
     [System.IO.File]::WriteAllText((Join-Path $TargetDir "open_ns3_vscode.bat"), $codeContent)
 
-    # 3. Desktop Shortcuts (Installed to both User Desktop and Public Desktop for 100% visibility)
-    $desktopDirs = @($desktop)
-    if ($publicDesktop -and (Test-Path $publicDesktop) -and $publicDesktop -ne $desktop) {
-        $desktopDirs += $publicDesktop
-    }
-    foreach ($d in $desktopDirs) {
-        try {
-            $lnk1 = Join-Path $d "ns-3 Linux Terminal.lnk"
-            $sc1 = $wsh.CreateShortcut($lnk1)
-            $sc1.TargetPath = (Join-Path $TargetDir "open_ns3_terminal.bat")
-            $sc1.WorkingDirectory = $TargetDir
-            $sc1.IconLocation = "cmd.exe,0"
-            $sc1.Description = "Open ns-3 Linux Terminal (Computer Networks Lab)"
-            $sc1.Save()
+    # 3. Create EXACTLY TWO shortcuts strictly on the user's primary Desktop
+    try {
+        $lnk1 = Join-Path $desktop "ns-3 Linux Terminal.lnk"
+        $sc1 = $wsh.CreateShortcut($lnk1)
+        $sc1.TargetPath = (Join-Path $TargetDir "open_ns3_terminal.bat")
+        $sc1.WorkingDirectory = $TargetDir
+        $sc1.IconLocation = "cmd.exe,0"
+        $sc1.Description = "Open ns-3 Linux Terminal (Computer Networks Lab)"
+        $sc1.Save()
 
-            $lnk2 = Join-Path $d "ns-3 VS Code.lnk"
-            $sc2 = $wsh.CreateShortcut($lnk2)
-            $sc2.TargetPath = (Join-Path $TargetDir "open_ns3_vscode.bat")
-            $sc2.WorkingDirectory = $TargetDir
-            $sc2.IconLocation = "shell32.dll,220"
-            $sc2.Description = "Open ns-3 in Visual Studio Code (Computer Networks Lab)"
-            $sc2.Save()
-        } catch {}
-    }
+        $lnk2 = Join-Path $desktop "ns-3 VS Code.lnk"
+        $sc2 = $wsh.CreateShortcut($lnk2)
+        $sc2.TargetPath = (Join-Path $TargetDir "open_ns3_vscode.bat")
+        $sc2.WorkingDirectory = $TargetDir
+        $sc2.IconLocation = "shell32.dll,220"
+        $sc2.Description = "Open ns-3 in Visual Studio Code (Computer Networks Lab)"
+        $sc2.Save()
+    } catch {}
 }
 
 # 2. Fast Non-Blocking Re-entry Check (Checks if ns-3 already installed)
@@ -352,14 +409,11 @@ $hasWSL = (Get-Command wsl.exe -ErrorAction SilentlyContinue) -ne $null
 if ($hasWSL -and -not $isSandbox) {
     $lxssService = Get-Service -Name LxssManager -ErrorAction SilentlyContinue
     if ($lxssService) {
-        $rawDistros = (wsl.exe -l -q 2>$null)
-        if ($rawDistros) {
-            $distros = ($rawDistros -replace "`0", "")
-            if ($distros -match "Ubuntu") {
-                $checkReady = wsl.exe -d Ubuntu bash -c "[ -f ~/workspace/ns-3-dev/ns3 ] && echo READY" 2>$null
-                if ($checkReady -match "READY") {
-                    Show-ControlCenter
-                }
+        $detectedDistro = Get-TargetWSLDistro
+        if ($detectedDistro) {
+            $checkReady = wsl.exe -d $detectedDistro bash -c "[ -f ~/workspace/ns-3-dev/ns3 ] && echo READY" 2>$null
+            if ($checkReady -match "READY") {
+                Show-ControlCenter -Distro $detectedDistro
             }
         }
     }
@@ -378,13 +432,14 @@ Write-Host "  network simulation environment on Windows 10 and Windows 11." -For
 Write-Host ""
 Write-Host "  What this tool will do for you:" -ForegroundColor Green
 Write-Host "    [1] Pre-Flight System Readiness Audit (OS, RAM, Virtualization, Disk)" -ForegroundColor White
-Write-Host "    [2] Configure Windows Subsystem for Linux (WSL2) and Ubuntu" -ForegroundColor White
-Write-Host "    [3] Configure Ubuntu user account and password" -ForegroundColor White
-Write-Host "    [4] Verify or install Visual Studio Code and Linux WSL extension" -ForegroundColor White
-Write-Host "    [5] Install complete C++ toolchain (g++, cmake, ninja, python3, git)" -ForegroundColor White
-Write-Host "    [6] Fetch ns-3 simulation core and compile with RAM-safe CPU tuning" -ForegroundColor White
-Write-Host "    [7] Run automated verification simulations (hello-simulator, first.cc)" -ForegroundColor White
-Write-Host "    [8] Place convenient 1-click shortcuts directly on your Windows Desktop" -ForegroundColor White
+Write-Host "    [2] Partition Storage Selection (Supports C:, D:, E:, etc.)" -ForegroundColor White
+Write-Host "    [3] Configure Windows Subsystem for Linux (WSL2) with Auto-Detection" -ForegroundColor White
+Write-Host "    [4] Configure Ubuntu user account and password" -ForegroundColor White
+Write-Host "    [5] Verify or install Visual Studio Code and Linux WSL extension" -ForegroundColor White
+Write-Host "    [6] Install complete C++ toolchain (g++, cmake, ninja, python3, git)" -ForegroundColor White
+Write-Host "    [7] Fetch ns-3 simulation core and compile with RAM-safe CPU tuning" -ForegroundColor White
+Write-Host "    [8] Run automated verification simulations (hello-simulator, first.cc)" -ForegroundColor White
+Write-Host "    [9] Place 2 clean 1-click shortcuts directly on your Windows Desktop" -ForegroundColor White
 Write-Host ""
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host "  Press any key to begin the Pre-Flight System Audit..." -ForegroundColor Yellow
@@ -397,20 +452,22 @@ Write-Host "====================================================================
 Write-Host "                 SYSTEM READINESS AUDIT (Pre-Flight Check)                    " -ForegroundColor Cyan
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Analyzing your computer hardware and Windows configuration..." -ForegroundColor White
+Write-Host "  Analyzing your computer hardware and storage partitions..." -ForegroundColor White
 Write-Host ""
 
 $os = Get-CimInstance Win32_OperatingSystem
 $cs = Get-CimInstance Win32_ComputerSystem
 $proc = Get-CimInstance Win32_Processor
-$disk = Get-PSDrive C -ErrorAction SilentlyContinue
 $build = [int]$os.BuildNumber
 $is64 = [Environment]::Is64BitOperatingSystem
 $virt = ($cs.HypervisorPresent -eq $true) -or ($proc.VirtualizationFirmwareEnabled -eq $true)
 $ramGB = [math]::Round($cs.TotalPhysicalMemory / 1GB, 1)
-$freeDiskGB = if ($disk) { [math]::Round($disk.Free / 1GB, 1) } else { 0 }
-$cpuThreads = [Environment]::ProcessorCount
-if (-not $cpuThreads -or $cpuThreads -lt 2) { $cpuThreads = 2 }
+
+# Enumerate all storage partitions
+$allDisks = Get-SystemDisks
+$cDriveObj = $allDisks | Where-Object { $_.Letter -eq "C" } | Select-Object -First 1
+$hasDriveWith15GB = ($allDisks | Where-Object { $_.HasSpace }).Count -gt 0
+$bestDisk = $allDisks | Sort-Object -Property FreeGB -Descending | Select-Object -First 1
 
 # Non-blocking network check (3-second timeout)
 $hasNet = $false
@@ -473,28 +530,27 @@ Write-Host ("   Processor Architecture   : {0,-35} [PASS]" -f ($procName + " ($c
 # Check 5: RAM & Turbo Concurrency Tuning
 if ($ramGB -lt 4) {
     Write-Host ("   System Memory [RAM]      : {0,-35} [WARN]" -f ($ramGB.ToString() + " GB [2 Threads - Low Memory]")) -ForegroundColor Yellow
-    $compileJobs = 2
 } elseif ($ramGB -lt 8) {
-    $compileJobs = [math]::Min($cpuThreads, 4)
     Write-Host ("   System Memory [RAM]      : {0,-35} [PASS]" -f ($ramGB.ToString() + " GB [$compileJobs Threads - Safe Concurrency]")) -ForegroundColor Green
 } elseif ($ramGB -lt 16) {
-    $compileJobs = [math]::Min($cpuThreads, [math]::Max(4, [int]($ramGB / 1.5)))
     Write-Host ("   System Memory [RAM]      : {0,-35} [PASS]" -f ($ramGB.ToString() + " GB [$compileJobs Threads - High-Speed Concurrency]")) -ForegroundColor Green
 } elseif ($ramGB -lt 32) {
-    # 16 GB to 32 GB RAM: High-end systems (Uses all CPU threads up to safe memory limits)
-    $compileJobs = [math]::Min($cpuThreads, [math]::Max(8, [int]($ramGB / 1.2)))
     Write-Host ("   System Memory [RAM]      : {0,-35} [PASS]" -f ($ramGB.ToString() + " GB [$compileJobs Threads - Turbo Accelerator]")) -ForegroundColor Green
 } else {
-    # 32 GB+ RAM: MAXIMUM BEAST MODE (All available CPU cores / threads unrestricted)
-    $compileJobs = $cpuThreads
     Write-Host ("   System Memory [RAM]      : {0,-35} [PASS]" -f ($ramGB.ToString() + " GB [$compileJobs Threads - Maximum Beast Mode]")) -ForegroundColor Green
 }
 
-# Check 6: Free Disk Space
-if ($freeDiskGB -ge 15) {
-    Write-Host ("   Free Storage on C:\      : {0,-35} [PASS]" -f ($freeDiskGB.ToString() + " GB Free on Drive C:")) -ForegroundColor Green
+# Check 6: Available Storage Space Across Partitions
+if ($hasDriveWith15GB) {
+    $storageSummary = if ($cDriveObj -and $cDriveObj.HasSpace) {
+        "$($cDriveObj.FreeGB) GB Free on C:"
+    } else {
+        "$($bestDisk.FreeGB) GB Free on $($bestDisk.Letter):"
+    }
+    Write-Host ("   Available Disk Storage   : {0,-35} [PASS]" -f $storageSummary) -ForegroundColor Green
 } else {
-    Write-Host ("   Free Storage on C:\      : {0,-35} [FAIL]" -f ($freeDiskGB.ToString() + " GB [Need at least 15 GB]")) -ForegroundColor Red
+    $maxAvailable = if ($bestDisk) { "$($bestDisk.FreeGB) GB on $($bestDisk.Letter):" } else { "Unknown" }
+    Write-Host ("   Available Disk Storage   : {0,-35} [FAIL]" -f "Max: $maxAvailable [Need >= 15 GB]") -ForegroundColor Red
     $allPass = $false
 }
 
@@ -529,10 +585,11 @@ if (-not $allPass) {
         Write-Host "  ACTION REQUIRED: OUTDATED WINDOWS VERSION" -ForegroundColor Yellow
         Write-Host "  Please open Windows Settings -> Windows Update and update your PC." -ForegroundColor White
     }
-    if ($freeDiskGB -lt 15) {
+    if (-not $hasDriveWith15GB) {
         Write-Host ""
         Write-Host "  ACTION REQUIRED: LOW DISK SPACE" -ForegroundColor Yellow
-        Write-Host "  Please free up at least 15 GB on drive C: to compile ns-3." -ForegroundColor White
+        Write-Host "  None of your drives have at least 15 GB of free space." -ForegroundColor White
+        Write-Host "  Please free up at least 15 GB on any drive (C:, D:, etc.) and try again." -ForegroundColor White
     }
     Write-Host ""
     Write-Host "  This window will stay open so you can note down the instructions." -ForegroundColor White
@@ -564,47 +621,101 @@ if ($isSandbox) {
 }
 
 Write-Host "==============================================================================" -ForegroundColor Cyan
+Write-Host "  Press any key to choose your installation partition..." -ForegroundColor Yellow
+Write-Host "==============================================================================" -ForegroundColor Cyan
+Wait-ForInput
+
+# 5. Phase 2: Partition & Storage Selection (Custom Drive Support)
+Clear-Host
+Write-Host "==============================================================================" -ForegroundColor Cyan
+Write-Host "                 STORAGE PARTITION SELECTION & DRIVE CONFIG                   " -ForegroundColor Cyan
+Write-Host "==============================================================================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  Detected Fixed Partitions on your PC:" -ForegroundColor White
+Write-Host ""
+Write-Host "  ------------------------------------------------------------------------------" -ForegroundColor DarkGray
+Write-Host "   DRIVE   FREE SPACE       TOTAL SPACE      RECOMMENDATION / STATUS           " -ForegroundColor Cyan
+Write-Host "  ------------------------------------------------------------------------------" -ForegroundColor DarkGray
+
+$recommendedLetter = "C"
+if ($cDriveObj -and $cDriveObj.HasSpace) {
+    $recommendedLetter = "C"
+} elseif ($bestDisk) {
+    $recommendedLetter = $bestDisk.Letter
+}
+
+foreach ($d in $allDisks) {
+    $statusStr = ""
+    $color = "White"
+    if ($d.Letter -eq $recommendedLetter) {
+        $statusStr = "[RECOMMENDED] Best Fit for Setup"
+        $color = "Green"
+    } elseif ($d.HasSpace) {
+        $statusStr = "[USABLE] Sufficient Storage"
+        $color = "Cyan"
+    } else {
+        $statusStr = "[LOW SPACE] Less than 15 GB"
+        $color = "Yellow"
+    }
+    Write-Host ("    {0,-6} {1,-16} {2,-16} {3}" -f ("$($d.Letter):"), "$($d.FreeGB) GB Free", "$($d.TotalGB) GB Total", $statusStr) -ForegroundColor $color
+}
+Write-Host "  ------------------------------------------------------------------------------" -ForegroundColor DarkGray
+Write-Host ""
+
+if ($allDisks.Count -gt 1) {
+    Write-Host "  You can install ns-3 on any drive letter with enough free space." -ForegroundColor White
+    Write-Host "  Press [ENTER] to use the recommended drive (${recommendedLetter}:), or type another letter:" -ForegroundColor Yellow
+    $userDriveChoice = Read-Host "  Enter drive letter [default: $recommendedLetter]"
+    if (-not $userDriveChoice) { $userDriveChoice = $recommendedLetter }
+    $userDriveChoice = $userDriveChoice.Trim().TrimEnd(':').ToUpper()
+    
+    $selectedDisk = $allDisks | Where-Object { $_.Letter -eq $userDriveChoice } | Select-Object -First 1
+    if (-not $selectedDisk) {
+        Write-Host "  [!] Drive ${userDriveChoice}: not found. Using default: ${recommendedLetter}:" -ForegroundColor Yellow
+        $userDriveChoice = $recommendedLetter
+        $selectedDisk = $allDisks | Where-Object { $_.Letter -eq $userDriveChoice } | Select-Object -First 1
+    }
+} else {
+    $userDriveChoice = $recommendedLetter
+    $selectedDisk = $allDisks[0]
+}
+
+$chosenDrive = "${userDriveChoice}:"
+$installRoot = "$chosenDrive\ns3-setup"
+$wslMoveTarget = "$chosenDrive\ns3-wsl"
+
+Write-Host ""
+Write-Host "  [OK] Installation Drive Selected: $chosenDrive" -ForegroundColor Green
+Write-Host "       Workspace Directory: $installRoot" -ForegroundColor Gray
+Write-Host ""
+
+# Ensure workspace directory exists on chosen drive
+if (-not (Test-Path $installRoot)) {
+    try { New-Item -ItemType Directory -Path $installRoot -Force | Out-Null } catch {}
+}
+
+# Update working scriptDir to the chosen installation root
+$scriptDir = $installRoot
+
+Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host "  Press any key to proceed with installation..." -ForegroundColor Yellow
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Wait-ForInput
 
-# 5. Phase 2: Storage Confirmation
+# 6. Phase 3: WSL2 & Ubuntu Provisioning (With Dynamic Distro Detection)
 Clear-Host
 Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "                 INSTALLATION STORAGE LOCATION CONFIRMATION                   " -ForegroundColor Cyan
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "  Recommended Location: Native High-Speed Linux Storage (~/workspace/ns-3-dev)" -ForegroundColor Green
-Write-Host ""
-Write-Host "  Why this location is best:" -ForegroundColor White
-Write-Host "    - Compiles 5x to 10x faster than Windows drives (no NTFS bridge bottleneck)" -ForegroundColor Gray
-Write-Host "    - Immune to Windows path length limits and file locking issues" -ForegroundColor Gray
-Write-Host "    - Fully accessible from Windows VS Code and Windows Explorer" -ForegroundColor Gray
-Write-Host ""
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "  Press [ENTER] to confirm and use the Recommended Fast Location (Default)" -ForegroundColor Yellow
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Wait-ForEnter
-
-# 6. Phase 3: WSL2 & Ubuntu Provisioning
-Clear-Host
-Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "  [Step 1/6] Configuring Windows Subsystem for Linux (WSL2) and Ubuntu...      " -ForegroundColor Cyan
+Write-Host "  [Step 1/6] Configuring Windows Subsystem for Linux (WSL2)...                 " -ForegroundColor Cyan
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host ""
 
-$rawDistros = (wsl.exe -l -q 2>$null)
-$ubuntuInstalled = $false
-if ($rawDistros) {
-    if (($rawDistros -replace "`0", "") -match "Ubuntu") {
-        $ubuntuInstalled = $true
-    }
-}
+# Detect existing distro dynamically (Ubuntu, Ubuntu-24.04, Ubuntu-22.04, etc.)
+$targetDistro = Get-TargetWSLDistro
 
-if ($ubuntuInstalled) {
-    Write-Host "  [OK] Ubuntu is already installed in WSL2!" -ForegroundColor Green
+if ($targetDistro) {
+    Write-Host "  [OK] Linux distribution detected: $targetDistro" -ForegroundColor Green
 } else {
-    Write-Host "  [*] Ubuntu is not yet installed. Setting up WSL2 and Ubuntu now..." -ForegroundColor Yellow
+    Write-Host "  [*] No registered Linux distribution found. Installing WSL2 and Ubuntu..." -ForegroundColor Yellow
     Write-Host "  [*] Downloading official Ubuntu Linux kernel and image from Microsoft..." -ForegroundColor White
     Write-Host "      (This may take 3-5 minutes depending on your internet connection)`n" -ForegroundColor Gray
 
@@ -619,8 +730,9 @@ if ($ubuntuInstalled) {
 
     wsl.exe --set-default-version 2 2>$null | Out-Null
 
-    $checkDistros = (wsl.exe -l -q 2>$null) -replace "`0", ""
-    if ($checkDistros -notmatch "Ubuntu") {
+    # Re-detect distro
+    $targetDistro = Get-TargetWSLDistro
+    if (-not $targetDistro) {
         Write-Host ""
         Write-Host "==============================================================================" -ForegroundColor Yellow
         Write-Host "  [RESTART REQUIRED] Windows Virtual Machine Platform has been enabled.       " -ForegroundColor Yellow
@@ -635,11 +747,22 @@ if ($ubuntuInstalled) {
         Wait-ForEnter
         exit 0
     }
-    Write-Host "  [OK] WSL2 and Ubuntu installed successfully!" -ForegroundColor Green
+    Write-Host "  [OK] WSL2 and $targetDistro installed successfully!" -ForegroundColor Green
 }
 
-wsl.exe --set-version Ubuntu 2 2>$null | Out-Null
+# Ensure WSL version is 2
+wsl.exe --set-version $targetDistro 2 2>$null | Out-Null
 wsl.exe --set-default-version 2 2>$null | Out-Null
+
+# Relocate WSL virtual disk to alternate partition if non-C drive selected
+if ($chosenDrive -ne "C:" -and (Test-Path $chosenDrive)) {
+    try {
+        if (-not (Test-Path $wslMoveTarget)) { New-Item -ItemType Directory -Path $wslMoveTarget -Force | Out-Null }
+        Write-Host "  [*] Relocating Linux storage to $wslMoveTarget to preserve space on C:..." -ForegroundColor Yellow
+        wsl.exe --manage $targetDistro --move "$wslMoveTarget" 2>$null | Out-Null
+        Write-Host "  [OK] Linux storage configured on $chosenDrive!" -ForegroundColor Green
+    } catch {}
+}
 
 # 7. Phase 4: Ubuntu User Account & Password Configuration
 Write-Host ""
@@ -647,9 +770,9 @@ Write-Host "====================================================================
 Write-Host "  [Step 2/6] Configuring Ubuntu User Account and Password...                   " -ForegroundColor Cyan
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  [*] Checking Ubuntu user accounts and permissions..." -ForegroundColor Yellow
+Write-Host "  [*] Checking Ubuntu user accounts and permissions in $targetDistro..." -ForegroundColor Yellow
 
-$existingUser = (wsl.exe -d Ubuntu -u root bash -c "id -un 1000 2>/dev/null || echo NONE" 2>$null).Trim()
+$existingUser = (wsl.exe -d $targetDistro -u root bash -c "id -un 1000 2>/dev/null || echo NONE" 2>$null).Trim()
 if ($existingUser -eq "NONE" -or -not $existingUser) {
     Write-Host "  No default user account found. Let's configure your login:" -ForegroundColor White
     Write-Host ""
@@ -664,20 +787,20 @@ if ($existingUser -eq "NONE" -or -not $existingUser) {
 
     if ($passChoice -eq "2") {
         Write-Host "`n  Opening interactive Ubuntu setup. Please enter your username and password below:" -ForegroundColor Yellow
-        wsl.exe -d Ubuntu
-        wsl.exe -t Ubuntu 2>$null
+        wsl.exe -d $targetDistro
+        wsl.exe -t $targetDistro 2>$null
         Start-Sleep -Seconds 2
     } else {
         Write-Host "`n  [*] Creating standard lab account 'student' with password '12345'..." -ForegroundColor Yellow
-        wsl.exe -d Ubuntu -u root bash -c "useradd -m -s /bin/bash -G sudo student 2>/dev/null || true; echo 'student:12345' | chpasswd; echo 'student ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/student; chmod 0440 /etc/sudoers.d/student; printf '[user]\ndefault=student\n' > /etc/wsl.conf"
-        wsl.exe -t Ubuntu 2>$null
+        wsl.exe -d $targetDistro -u root bash -c "useradd -m -s /bin/bash -G sudo student 2>/dev/null || true; echo 'student:12345' | chpasswd; echo 'student ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/student; chmod 0440 /etc/sudoers.d/student; printf '[user]\ndefault=student\n' > /etc/wsl.conf"
+        wsl.exe -t $targetDistro 2>$null
         Start-Sleep -Seconds 2
         Write-Host "  [OK] Account 'student' configured with password '12345' and seamless sudo!" -ForegroundColor Green
     }
 } else {
     Write-Host "  [OK] Existing Ubuntu user detected: $existingUser" -ForegroundColor Green
     Write-Host "  [*] Ensuring passwordless sudo access for lab exercises..." -ForegroundColor Yellow
-    wsl.exe -d Ubuntu -u root bash -c "echo '$existingUser ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/$existingUser; chmod 0440 /etc/sudoers.d/$existingUser" 2>$null
+    wsl.exe -d $targetDistro -u root bash -c "echo '$existingUser ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/$existingUser; chmod 0440 /etc/sudoers.d/$existingUser" 2>$null
     Write-Host "  [OK] User permissions verified!" -ForegroundColor Green
 }
 
@@ -712,10 +835,14 @@ if ($vscodeCmd) {
 
     $vsInstaller = Join-Path $env:TEMP "VSCodeSetup.exe"
     try {
-        curl.exe -L -# "https://update.code.visualstudio.com/latest/win32-x64-user/stable" -o $vsInstaller
+        if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+            curl.exe -L -# "https://update.code.visualstudio.com/latest/win32-x64-user/stable" -o $vsInstaller
+        } else {
+            (New-Object System.Net.WebClient).DownloadFile("https://update.code.visualstudio.com/latest/win32-x64-user/stable", $vsInstaller)
+        }
         if (Test-Path $vsInstaller) {
             Write-Host "`n  [*] Installing VS Code silently in background..." -ForegroundColor Yellow
-            Start-Process -FilePath $vsInstaller -ArgumentList "/VERYSILENT /NORESTART /MERGETASKS=!runcode,addtopath,desktopicon" -Wait
+            Start-Process -FilePath $vsInstaller -ArgumentList "/VERYSILENT /NORESTART /MERGETASKS=!runcode,addtopath" -Wait
             Remove-Item $vsInstaller -Force -ErrorAction SilentlyContinue
             $vscodeCmd = "$env:LOCALAPPDATA\Programs\Microsoft VS Code\bin\code.cmd"
             $env:PATH = "$env:LOCALAPPDATA\Programs\Microsoft VS Code\bin;$env:PATH"
@@ -737,7 +864,7 @@ if ($vscodeCmd) {
 # 9. Phase 6: Ubuntu Compilers & Build Tools
 Write-Host ""
 Write-Host "==============================================================================" -ForegroundColor Cyan
-Write-Host "  [Step 4/6] Installing C++ Compilers and Build Tools inside Ubuntu...         " -ForegroundColor Cyan
+Write-Host "  [Step 4/6] Installing C++ Compilers and Build Tools inside $targetDistro...  " -ForegroundColor Cyan
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Note: This step installs g++, cmake, ninja-build, git, python3, ccache." -ForegroundColor White
@@ -755,11 +882,20 @@ done
 apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends g++ cmake ninja-build git python3 python3-pip python3-setuptools ccache pkg-config sqlite3 libsqlite3-dev libxml2-dev
 '@
 
-wsl.exe -d Ubuntu -u root bash -c "$pkgInstallCmd"
+wsl.exe -d $targetDistro -u root bash -c "$pkgInstallCmd"
+$pkgSuccess = ($LASTEXITCODE -eq 0)
 
-if ($LASTEXITCODE -ne 0) {
+if (-not $pkgSuccess) {
     Write-Host "`n  [!] Retrying package installation once..." -ForegroundColor Yellow
-    wsl.exe -d Ubuntu -u root bash -c "$pkgInstallCmd"
+    wsl.exe -d $targetDistro -u root bash -c "$pkgInstallCmd"
+    $pkgSuccess = ($LASTEXITCODE -eq 0)
+}
+
+if (-not $pkgSuccess) {
+    Write-Host "`n  [!] Failed to install C++ compilers inside $targetDistro." -ForegroundColor Red
+    Write-Host "  Please check your internet connection and run this installer again." -ForegroundColor White
+    Wait-ForEnter
+    exit 1
 }
 Write-Host "`n  [OK] All C++ compilers and build tools successfully installed!" -ForegroundColor Green
 
@@ -822,12 +958,12 @@ echo '[*] Starting compilation with Ninja ($compileJobs CPU threads)...'
 ./ns3 build -j $compileJobs
 "@
 
-wsl.exe -d Ubuntu bash -lic "$buildScript"
+wsl.exe -d $targetDistro bash -lic "$buildScript"
 $buildSuccess = ($LASTEXITCODE -eq 0)
 
 if (-not $buildSuccess) {
     Write-Host "`n  [*] Finalizing compilation and resolving dependencies..." -ForegroundColor Yellow
-    wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && ./ns3 build -j $compileJobs"
+    wsl.exe -d $targetDistro bash -lic "cd ~/workspace/ns-3-dev && ./ns3 build -j $compileJobs"
     $buildSuccess = ($LASTEXITCODE -eq 0)
 }
 
@@ -851,17 +987,17 @@ Write-Host "====================================================================
 Write-Host ""
 
 Write-Host "  >> Running Verification Test 1: hello-simulator..." -ForegroundColor Yellow
-wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && ./ns3 run hello-simulator"
+wsl.exe -d $targetDistro bash -lic "cd ~/workspace/ns-3-dev && ./ns3 run hello-simulator"
 
 Write-Host "`n  >> Running Verification Test 2: first.cc (Two-Node Point-to-Point simulation)..." -ForegroundColor Yellow
-wsl.exe -d Ubuntu bash -lic "cd ~/workspace/ns-3-dev && ./ns3 run examples/tutorial/first"
+wsl.exe -d $targetDistro bash -lic "cd ~/workspace/ns-3-dev && ./ns3 run examples/tutorial/first"
 
 Write-Host "`n  [OK] Verification simulations PASSED completely!" -ForegroundColor Green
 
-# 12. Phase 9: Auto-Generate Launchers & Desktop Shortcuts
+# 12. Phase 9: Auto-Generate Launchers & Desktop Shortcuts (Strictly 2 clean icons)
 Write-Host ""
 Write-Host "  [*] Generating 1-click launchers and desktop shortcuts..." -ForegroundColor Yellow
-New-DesktopShortcuts -TargetDir $scriptDir
+New-DesktopShortcuts -TargetDir $scriptDir -TargetDistro $targetDistro
 
 # 13. Phase 10: Final Completion Summary Checklist
 Clear-Host
@@ -872,15 +1008,15 @@ Write-Host "          Prepared with care for BSCS Batch 2025-2029 by Qamar Abbas
 Write-Host "==============================================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Summary of Components Configured:" -ForegroundColor White
-Write-Host "    [OK] Windows Subsystem for Linux (WSL2)         : ACTIVE" -ForegroundColor Green
-Write-Host "    [OK] Ubuntu Linux Environment                  : ACTIVE" -ForegroundColor Green
-Write-Host "    [OK] C++ Compilers and Build Tools (g++, ninja): INSTALLED" -ForegroundColor Green
-Write-Host "    [OK] Visual Studio Code and WSL Remote Plugin  : CONFIGURED" -ForegroundColor Green
-Write-Host "    [OK] ns-3 Simulation Core and Libraries        : COMPILED" -ForegroundColor Green
-Write-Host "    [OK] Verification Test 1 (hello-simulator)     : PASSED" -ForegroundColor Green
-Write-Host "    [OK] Verification Test 2 (first.cc simulation) : PASSED" -ForegroundColor Green
-Write-Host "    [OK] Ubuntu User Account and Password          : CONFIGURED" -ForegroundColor Green
-Write-Host "    [OK] Desktop 1-Click Shortcuts                 : CREATED ON DESKTOP" -ForegroundColor Green
+Write-Host "    [OK] Windows Subsystem for Linux (WSL2)         : ACTIVE ($targetDistro)" -ForegroundColor Green
+Write-Host "    [OK] Linux Storage Location                     : ACTIVE ($chosenDrive)" -ForegroundColor Green
+Write-Host "    [OK] C++ Compilers and Build Tools (g++, ninja) : INSTALLED" -ForegroundColor Green
+Write-Host "    [OK] Visual Studio Code and WSL Remote Plugin   : CONFIGURED" -ForegroundColor Green
+Write-Host "    [OK] ns-3 Simulation Core and Libraries         : COMPILED" -ForegroundColor Green
+Write-Host "    [OK] Verification Test 1 (hello-simulator)      : PASSED" -ForegroundColor Green
+Write-Host "    [OK] Verification Test 2 (first.cc simulation)  : PASSED" -ForegroundColor Green
+Write-Host "    [OK] Ubuntu User Account and Password           : CONFIGURED" -ForegroundColor Green
+Write-Host "    [OK] Desktop 1-Click Shortcuts (2 Icons)        : CREATED ON DESKTOP" -ForegroundColor Green
 Write-Host ""
 Write-Host "  HOW TO START WORKING FROM NOW ON:" -ForegroundColor Cyan
 Write-Host "    1. Desktop Shortcut : Double-click `"ns-3 Linux Terminal`" on your Desktop!" -ForegroundColor White
@@ -893,5 +1029,5 @@ Write-Host "====================================================================
 Wait-ForInput
 
 $termBat = Join-Path $scriptDir "open_ns3_terminal.bat"
-if (Test-Path $termBat) { Start-Process $termBat } else { wsl.exe -d Ubuntu -e bash -lic "cd ~/workspace/ns-3-dev; exec bash" }
+if (Test-Path $termBat) { Start-Process $termBat } else { wsl.exe -d $targetDistro -e bash -lic "cd ~/workspace/ns-3-dev; exec bash" }
 exit 0
