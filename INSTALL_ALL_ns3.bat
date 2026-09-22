@@ -886,12 +886,13 @@ done
 apt-get update -y && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends g++ cmake ninja-build git python3 python3-pip python3-setuptools ccache pkg-config sqlite3 libsqlite3-dev libxml2-dev
 '@
 
-wsl.exe -d $targetDistro -u root bash -c "$pkgInstallCmd"
+$b64Pkg = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($pkgInstallCmd))
+wsl.exe -d $targetDistro -u root bash -c "echo '$b64Pkg' | base64 -d | bash"
 $pkgSuccess = ($LASTEXITCODE -eq 0)
 
 if (-not $pkgSuccess) {
     Write-Host "`n  [!] Retrying package installation once..." -ForegroundColor Yellow
-    wsl.exe -d $targetDistro -u root bash -c "$pkgInstallCmd"
+    wsl.exe -d $targetDistro -u root bash -c "echo '$b64Pkg' | base64 -d | bash"
     $pkgSuccess = ($LASTEXITCODE -eq 0)
 }
 
@@ -977,12 +978,13 @@ echo '[*] Starting compilation with Ninja ($compileJobs CPU threads)...'
 ./ns3 build -j $compileJobs
 "@
 
-wsl.exe -d $targetDistro bash -lic "$buildScript"
+$b64Build = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($buildScript))
+wsl.exe -d $targetDistro bash -lic "echo '$b64Build' | base64 -d | bash"
 $buildSuccess = ($LASTEXITCODE -eq 0)
 
 if (-not $buildSuccess) {
     Write-Host "`n  [*] Finalizing compilation and resolving dependencies..." -ForegroundColor Yellow
-    wsl.exe -d $targetDistro bash -lic "cd ~/workspace/ns-3-dev && ./ns3 build -j $compileJobs"
+    wsl.exe -d $targetDistro bash -lic "echo '$b64Build' | base64 -d | bash"
     $buildSuccess = ($LASTEXITCODE -eq 0)
 }
 
