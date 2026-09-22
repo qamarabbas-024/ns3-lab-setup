@@ -1,7 +1,7 @@
 <# :ns3_master_installer
 @echo off
 setlocal EnableDelayedExpansion
-title ns-3 Automated Environment - BSCS Computer Networks
+title ns-3 Automated Simulation Suite - Created by Qamar Abbas
 color 0B
 cd /d "%~dp0"
 set "NS3_SCRIPT_PATH=%~f0"
@@ -27,7 +27,10 @@ exit /b %errorlevel%
 # Prepared with care for BSCS Batch 2025-2029 by Qamar Abbas
 # ==============================================================================
 
-$Host.UI.RawUI.WindowTitle = "ns-3 Automated Simulation Suite - BSCS Computer Networks"
+# Force TLS 1.2 for all HTTPS operations (ensures compatibility with older Windows 10)
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+$Host.UI.RawUI.WindowTitle = "ns-3 Automated Simulation Suite - Created by Qamar Abbas"
 
 # Safe input helper functions (immune to console redirection crashes)
 function Wait-ForInput {
@@ -74,7 +77,7 @@ function Get-TargetWSLDistro {
 # Function to scan all physical fixed disk partitions
 function Get-SystemDisks {
     try {
-        return @(Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 } | ForEach-Object {
+        $disks = @(Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 } | ForEach-Object {
             [PSCustomObject]@{
                 Letter   = $_.DeviceID.TrimEnd(':').ToUpper()
                 DeviceID = $_.DeviceID.ToUpper()
@@ -83,8 +86,9 @@ function Get-SystemDisks {
                 HasSpace = ($_.FreeSpace / 1GB -ge 15)
             }
         })
+        return ,$disks
     } catch {
-        return @()
+        return ,@()
     }
 }
 
@@ -464,9 +468,9 @@ $virt = ($cs.HypervisorPresent -eq $true) -or ($proc.VirtualizationFirmwareEnabl
 $ramGB = [math]::Round($cs.TotalPhysicalMemory / 1GB, 1)
 
 # Enumerate all storage partitions
-$allDisks = Get-SystemDisks
+$allDisks = @(Get-SystemDisks)
 $cDriveObj = $allDisks | Where-Object { $_.Letter -eq "C" } | Select-Object -First 1
-$hasDriveWith15GB = ($allDisks | Where-Object { $_.HasSpace }).Count -gt 0
+$hasDriveWith15GB = ($allDisks | Where-Object { $_.FreeGB -ge 15 }) -ne $null
 $bestDisk = $allDisks | Sort-Object -Property FreeGB -Descending | Select-Object -First 1
 
 # Non-blocking network check (3-second timeout)
@@ -542,14 +546,14 @@ if ($ramGB -lt 4) {
 
 # Check 6: Available Storage Space Across Partitions
 if ($hasDriveWith15GB) {
-    $storageSummary = if ($cDriveObj -and $cDriveObj.HasSpace) {
+    $storageSummary = if ($cDriveObj -and $cDriveObj.FreeGB -ge 15) {
         "$($cDriveObj.FreeGB) GB Free on C:"
     } else {
         "$($bestDisk.FreeGB) GB Free on $($bestDisk.Letter):"
     }
     Write-Host ("   Available Disk Storage   : {0,-35} [PASS]" -f $storageSummary) -ForegroundColor Green
 } else {
-    $maxAvailable = if ($bestDisk) { "$($bestDisk.FreeGB) GB on $($bestDisk.Letter):" } else { "Unknown" }
+    $maxAvailable = if ($bestDisk) { "$($bestDisk.FreeGB) GB on $($bestDisk.Letter):" } else { "0 GB" }
     Write-Host ("   Available Disk Storage   : {0,-35} [FAIL]" -f "Max: $maxAvailable [Need >= 15 GB]") -ForegroundColor Red
     $allPass = $false
 }
@@ -662,12 +666,12 @@ foreach ($d in $allDisks) {
 Write-Host "  ------------------------------------------------------------------------------" -ForegroundColor DarkGray
 Write-Host ""
 
-if ($allDisks.Count -gt 1) {
+if (@($allDisks).Count -gt 1) {
     Write-Host "  You can install ns-3 on any drive letter with enough free space." -ForegroundColor White
     Write-Host "  Press [ENTER] to use the recommended drive (${recommendedLetter}:), or type another letter:" -ForegroundColor Yellow
     $userDriveChoice = Read-Host "  Enter drive letter [default: $recommendedLetter]"
     if (-not $userDriveChoice) { $userDriveChoice = $recommendedLetter }
-    $userDriveChoice = $userDriveChoice.Trim().TrimEnd(':').ToUpper()
+    $userDriveChoice = $userDriveChoice.Trim().TrimEnd('\').TrimEnd('/').TrimEnd(':').ToUpper()
     
     $selectedDisk = $allDisks | Where-Object { $_.Letter -eq $userDriveChoice } | Select-Object -First 1
     if (-not $selectedDisk) {
@@ -677,7 +681,7 @@ if ($allDisks.Count -gt 1) {
     }
 } else {
     $userDriveChoice = $recommendedLetter
-    $selectedDisk = $allDisks[0]
+    $selectedDisk = @($allDisks)[0]
 }
 
 $chosenDrive = "${userDriveChoice}:"
@@ -932,10 +936,25 @@ set -e
 mkdir -p ~/workspace
 cd ~/workspace
 git config --global --add safe.directory "*" 2>/dev/null || true
-if [ -d 'ns-3-dev' ] && [ ! -d 'ns-3-dev/.git' ]; then
-    echo '[*] Cleaning up incomplete previous download...'
-    rm -rf ns-3-dev
+
+# 1. WSL2 DNS Fallback Guard
+if ! getent hosts gitlab.com >/dev/null 2>&1 && ! getent hosts github.com >/dev/null 2>&1; then
+    echo '[*] Configuring WSL2 DNS nameservers...'
+    echo 'nameserver 8.8.8.8' | sudo tee /etc/resolv.conf >/dev/null 2>&1 || true
+    echo 'nameserver 1.1.1.1' | sudo tee -a /etc/resolv.conf >/dev/null 2>&1 || true
 fi
+
+# 2. Workspace permissions guard
+sudo chown -R `$(id -u):`$(id -g) ~/workspace 2>/dev/null || true
+
+# 3. Clean incomplete or corrupted previous download
+if [ -d 'ns-3-dev' ]; then
+    if [ ! -f 'ns-3-dev/CMakeLists.txt' ] || [ ! -f 'ns-3-dev/ns3' ]; then
+        echo '[*] Cleaning up incomplete or corrupted previous download...'
+        rm -rf ns-3-dev
+    fi
+fi
+
 if [ ! -d 'ns-3-dev/.git' ]; then
     echo '[*] Fetching ns-3 repository using fast shallow download...'
     if ! git clone --depth 1 https://gitlab.com/nsnam/ns-3-dev.git ns-3-dev; then
