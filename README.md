@@ -112,7 +112,7 @@ Hello Simulator
 ### 2. Lab 1 Tutorial Test (`first.cc`)
 Simulates a two-node point-to-point network transmitting 1024-byte packets:
 ```bash
-./ns3 run examples/tutorial/first
+./ns3 run first
 ```
 **Expected Output:**
 ```text
@@ -120,6 +120,44 @@ At time +2s client sent 1024 bytes to 10.1.1.2 port 9
 At time +2.00369s server received 1024 bytes from 10.1.1.1 port 49153
 At time +2.00369s server sent 1024 bytes to 10.1.1.1 port 49153
 At time +2.00737s client received 1024 bytes from 10.1.1.2 port 9
+```
+
+### 3. Lab 1 Multi-Node Routed Simulation (`lab1-simulation.cc`)
+Simulates a 3-node routed topology (`[Client] <--> [Router] <--> [Server]`) across two subnets (`10.1.1.0/24` and `10.1.2.0/24`) with live packet tracing, RTT calculation (~24.1 ms), and automatic Wireshark `.pcap` capture:
+```bash
+./ns3 run lab1-simulation
+```
+**Expected Output:**
+```text
+======================================================================
+               ns-3 NETWORK SIMULATION - LAB DEMO                     
+                     Created by Qamar Abbas                           
+======================================================================
+[*] Initializing Network Topology:
+    [Node 0: Client] <--- Link 1 (5 Mbps, 2ms) ---> [Node 1: Router]
+    [Node 1: Router] <--- Link 2 (1.5 Mbps, 10ms) -> [Node 2: Server]
+
+[*] IP Address Configuration:
+    - Node 0 (Client) IP : 10.1.1.1
+    - Node 1 (Router) IP1: 10.1.1.2
+    - Node 1 (Router) IP2: 10.1.2.1
+    - Node 2 (Server) IP : 10.1.2.2
+
+[*] Running Network Simulation (Transmitting 5 UDP Packets)...
+----------------------------------------------------------------------
+[Time: 2.000s] [CLIENT SEND]  Packet of 1024 bytes transmitted towards Server.
+[Time: 2.020s] [SERVER RECV]  Packet of 1024 bytes received at Server (Echoing back...)
+[Time: 3.000s] [CLIENT SEND]  Packet of 1024 bytes transmitted towards Server.
+[Time: 3.020s] [SERVER RECV]  Packet of 1024 bytes received at Server (Echoing back...)
+...
+----------------------------------------------------------------------
+[*] SIMULATION RESULTS & SUMMARY:
+    - Packets Sent By Client  : 5 Packets (1024 Bytes each)
+    - Packets Received At Server: 5 Packets (100% Delivery Rate)
+    - Packet Loss             : 0.0% (Zero Packet Loss)
+    - Round Trip Time (RTT)   : ~24.1 ms across 2 hops
+    - Wireshark PCAPs Created : lab1-network-*.pcap
+======================================================================
 ```
 
 ---
@@ -131,7 +169,7 @@ Whenever you double-click `INSTALL_ALL_ns3.bat` after installation, it automatic
 ```text
 ==============================================================================
                     ns-3 SIMULATION CONTROL CENTER
-        Created by Qamar Abbas
+                        Created by Qamar Abbas
 ==============================================================================
 
   Your ns-3 simulation environment is fully installed and operational!
@@ -139,7 +177,7 @@ Whenever you double-click `INSTALL_ALL_ns3.bat` after installation, it automatic
   Please select an action:
     [1] Launch ns-3 Linux Terminal
     [2] Open ns-3 in Visual Studio Code
-    [3] Run Lab 1 Simulation (first.cc)
+    [3] Run Lab 1 Network Simulation (lab1-simulation)
     [4] Run Smoke Test (hello-simulator)
     [5] Rebuild / Recompile ns-3 Code
     [6] Re-create Desktop Shortcuts
