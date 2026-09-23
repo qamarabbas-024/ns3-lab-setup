@@ -178,11 +178,13 @@ Whenever you double-click `INSTALL_ALL_ns3.bat` after installation, it automatic
     [1] Launch ns-3 Linux Terminal
     [2] Open ns-3 in Visual Studio Code
     [3] Run Lab 1 Network Simulation (lab1-simulation)
-    [4] Run Smoke Test (hello-simulator)
-    [5] Rebuild / Recompile ns-3 Code
-    [6] Re-create Desktop Shortcuts
-    [7] Reinstall / Repair Environment from Scratch
-    [8] Exit
+    [4] Run Simple 3-Node Simulation (simple-network)
+    [5] Run Smoke Test (hello-simulator)
+    [6] Rebuild / Recompile ns-3 Code
+    [7] Check Health, Fix Missing Tools & Update Environment
+    [8] Re-create Desktop Shortcuts
+    [9] Reinstall / Repair Environment from Scratch
+    [10] Exit
 ==============================================================================
 ```
 
