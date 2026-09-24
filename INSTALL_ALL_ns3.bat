@@ -526,11 +526,12 @@ function Show-ControlCenter {
         Write-Host "    [6] Rebuild / Recompile ns-3 Code" -ForegroundColor Cyan
         Write-Host "    [7] Check Health, Fix Missing Tools & Update Environment" -ForegroundColor Green
         Write-Host "    [8] Re-create Desktop Shortcuts" -ForegroundColor Cyan
-        Write-Host "    [9] Reinstall / Repair Environment from Scratch" -ForegroundColor Cyan
-        Write-Host "    [10] Exit" -ForegroundColor Gray
+        Write-Host "    [9] Clean Reset ns-3 Build Cache & Recompile" -ForegroundColor Cyan
+        Write-Host "    [10] Completely Uninstall & Wipe ns-3 from this PC (Fresh Start)" -ForegroundColor Red
+        Write-Host "    [11] Exit" -ForegroundColor Gray
         Write-Host ""
         Write-Host "==============================================================================" -ForegroundColor Cyan
-        $choice = Read-Host "Enter choice [1-10, default: 1]"
+        $choice = Read-Host "Enter choice [1-11, default: 1]"
         if (-not $choice) { $choice = "1" }
 
         switch ($choice) {
@@ -586,13 +587,52 @@ function Show-ControlCenter {
             }
             "9" {
                 Write-Host "`n  [*] Cleaning ns-3 build cache and resetting configuration..." -ForegroundColor Yellow
-                wsl.exe -d $Distro bash -c "cd ~/workspace/ns-3-dev 2>/dev/null && rm -rf build" 2>$null
+                wsl.exe -d $Distro bash -c "cd ~/workspace/ns-3-dev 2>/dev/null && rm -rf build cmake-cache" 2>$null
                 wsl.exe -d $Distro bash -c "rm -f ~/workspace/ns-3-dev/ns3" 2>$null
-                Write-Host "  [OK] Reset complete. Restarting installation..." -ForegroundColor Green
+                Write-Host "  [OK] Build cache cleared. Reconfiguring and compiling..." -ForegroundColor Green
+                wsl.exe -d $Distro bash -lic "cd ~/workspace/ns-3-dev && ./ns3 configure --enable-examples --disable-tests --enable-logs -d optimized && ./ns3 build -j $compileJobs lab1-simulation simple-network hello-simulator first"
+                Write-Host "  [OK] Recompile complete!" -ForegroundColor Green
                 Start-Sleep -Seconds 2
-                return
             }
-            "10" { exit 0 }
+            "10" {
+                Write-Host ""
+                Write-Host "==============================================================================" -ForegroundColor Red
+                Write-Host "                COMPLETELY UNINSTALL ns-3 AND UBUNTU LINUX                    " -ForegroundColor Red
+                Write-Host "==============================================================================" -ForegroundColor Red
+                Write-Host "  WARNING: This will permanently delete:" -ForegroundColor Yellow
+                Write-Host "    1. The '$Distro' Linux environment and all its files." -ForegroundColor White
+                Write-Host "    2. The ~/workspace/ns-3-dev directory and compiled binaries." -ForegroundColor White
+                Write-Host "    3. Desktop shortcuts and workspace folders." -ForegroundColor White
+                Write-Host "  (All disk space will be completely freed up on your computer).`n" -ForegroundColor Gray
+                $confirm = Read-Host "  Are you ABSOLUTELY sure you want to uninstall? (Type YES to proceed)"
+                if ($confirm -eq "YES") {
+                    Write-Host "`n  [*] Unregistering and deleting Linux distribution ($Distro)..." -ForegroundColor Yellow
+                    wsl.exe --unregister $Distro 2>$null
+                    
+                    Write-Host "  [*] Removing Desktop shortcuts..." -ForegroundColor Yellow
+                    $desktop = [Environment]::GetFolderPath("Desktop")
+                    Remove-Item (Join-Path $desktop "ns-3 Linux Terminal.lnk") -Force -ErrorAction SilentlyContinue
+                    Remove-Item (Join-Path $desktop "ns-3 VS Code.lnk") -Force -ErrorAction SilentlyContinue
+                    
+                    Write-Host "  [*] Cleaning up installation directories..." -ForegroundColor Yellow
+                    if ($scriptDir -and (Test-Path $scriptDir)) {
+                        Remove-Item $scriptDir -Recurse -Force -ErrorAction SilentlyContinue
+                    }
+                    if ($wslMoveTarget -and (Test-Path $wslMoveTarget)) {
+                        Remove-Item $wslMoveTarget -Recurse -Force -ErrorAction SilentlyContinue
+                    }
+                    Write-Host "`n==============================================================================" -ForegroundColor Green
+                    Write-Host "  [OK] UNINSTALL COMPLETE! All files and storage have been removed." -ForegroundColor Green
+                    Write-Host "  You can now run INSTALL_ALL_ns3.bat anytime for a 100% fresh installation." -ForegroundColor White
+                    Write-Host "==============================================================================" -ForegroundColor Green
+                    Wait-ForEnter
+                    exit 0
+                } else {
+                    Write-Host "`n  Uninstall cancelled. Returning to menu..." -ForegroundColor Gray
+                    Start-Sleep -Seconds 2
+                }
+            }
+            "11" { exit 0 }
             default { exit 0 }
         }
     }
