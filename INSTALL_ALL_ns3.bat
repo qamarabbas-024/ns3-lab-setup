@@ -51,26 +51,42 @@ function Wait-ForEnter {
 
 # Function to dynamically resolve the registered WSL distribution name
 function Get-TargetWSLDistro {
+    # 1. Primary Source: Windows Registry (100% reliable, immune to console stdout/stderr noise)
+    try {
+        $regKeys = Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss -ErrorAction SilentlyContinue
+        $regDistros = @($regKeys | ForEach-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DistributionName } | Where-Object {
+            $_ -and
+            $_ -notmatch "docker" -and
+            $_ -match '^[A-Za-z0-9][A-Za-z0-9\.\-_]{1,30}$'
+        })
+        if ($regDistros.Count -gt 0) {
+            if ($regDistros -contains "Ubuntu") { return "Ubuntu" }
+            $u = $regDistros | Where-Object { $_ -match "^Ubuntu" } | Select-Object -First 1
+            if ($u) { return $u }
+            if ($regDistros -contains "Debian") { return "Debian" }
+            return $regDistros[0]
+        }
+    } catch {}
+
+    # 2. Secondary Fallback: wsl.exe -l -q with strict alphanumeric validation
     try {
         $raw = wsl.exe -l -q 2>$null
-        if (-not $raw) { return $null }
-        $distros = @($raw | ForEach-Object { ($_ -replace "`0", "").Trim() } | Where-Object { $_ -ne "" })
-        if ($distros.Count -eq 0) { return $null }
-        
-        # 1. Look for exact "Ubuntu"
-        if ($distros -contains "Ubuntu") { return "Ubuntu" }
-        
-        # 2. Look for versioned Ubuntu (Ubuntu-24.04, Ubuntu-22.04, Ubuntu-20.04)
-        $uDistro = $distros | Where-Object { $_ -match "^Ubuntu" } | Select-Object -First 1
-        if ($uDistro) { return $uDistro }
-        
-        # 3. Look for Debian
-        if ($distros -contains "Debian") { return "Debian" }
-        
-        # 4. Any other non-docker distro
-        $other = $distros | Where-Object { $_ -notmatch "docker" } | Select-Object -First 1
-        if ($other) { return $other }
+        if ($raw) {
+            $cleaned = @($raw | ForEach-Object { ($_ -replace "`0", "").Trim() } | Where-Object {
+                $_ -and
+                $_ -notmatch "Copyright|Microsoft|Windows|Subsystem|Distribution|Usage|Option|Error|Installing|Downloading|docker|---|license|\.exe" -and
+                $_ -match '^[A-Za-z0-9][A-Za-z0-9\.\-_]{1,30}$'
+            })
+            if ($cleaned.Count -gt 0) {
+                if ($cleaned -contains "Ubuntu") { return "Ubuntu" }
+                $u = $cleaned | Where-Object { $_ -match "^Ubuntu" } | Select-Object -First 1
+                if ($u) { return $u }
+                if ($cleaned -contains "Debian") { return "Debian" }
+                return $cleaned[0]
+            }
+        }
     } catch {}
+
     return $null
 }
 
@@ -975,6 +991,14 @@ Write-Host ""
 
 # Detect existing distro dynamically (Ubuntu, Ubuntu-24.04, Ubuntu-22.04, etc.)
 $targetDistro = Get-TargetWSLDistro
+
+if ($targetDistro) {
+    $testDistro = wsl.exe -d $targetDistro -e echo DISTRO_OK 2>$null
+    if ($testDistro -notmatch "DISTRO_OK") {
+        Write-Host "  [*] Detected distribution '$targetDistro' is not responding. Installing fresh Ubuntu..." -ForegroundColor Yellow
+        $targetDistro = $null
+    }
+}
 
 if ($targetDistro) {
     Write-Host "  [OK] Linux distribution detected: $targetDistro" -ForegroundColor Green
