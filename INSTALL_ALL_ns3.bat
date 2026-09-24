@@ -1052,13 +1052,33 @@ if ($targetDistro) {
     Write-Host "  [*] Downloading official Ubuntu Linux kernel and image from Microsoft..." -ForegroundColor White
     Write-Host "      (This may take 3-5 minutes depending on your internet connection)`n" -ForegroundColor Gray
 
-    wsl.exe --install -d Ubuntu --no-launch
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  [*] Enabling Windows Subsystem for Linux & Virtual Machine features..." -ForegroundColor Yellow
-        dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart | Out-Null
-        dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart | Out-Null
+    # Attempt 1: Modern wsl --install with --no-launch (Windows 11 / WSL Store)
+    $wslOut = wsl.exe --install -d Ubuntu --no-launch 2>&1
+    $isUnrecognized = ($wslOut -match "unrecognized option" -or $wslOut -match "Usage:")
+    
+    # Attempt 2: Standard Windows 10 wsl --install (without --no-launch)
+    if ($isUnrecognized -or ($LASTEXITCODE -ne 0 -and -not (Get-TargetWSLDistro))) {
+        Write-Host "  [*] Adapting to Windows 10 WSL engine (installing without --no-launch)..." -ForegroundColor Yellow
+        wsl.exe --install -d Ubuntu
+    }
+
+    # Attempt 3: If still not installed, check if features need DISM enablement
+    $targetDistro = Get-TargetWSLDistro
+    if (-not $targetDistro) {
+        Write-Host "  [*] Ensuring Windows Subsystem for Linux & Virtual Machine features are active..." -ForegroundColor Yellow
+        dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart 2>&1 | Out-Null
+        dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart 2>&1 | Out-Null
         wsl.exe --set-default-version 2 2>$null | Out-Null
-        wsl.exe --install -d Ubuntu --no-launch
+        
+        # Try standard install without --no-launch
+        Write-Host "  [*] Installing Ubuntu distribution..." -ForegroundColor Yellow
+        wsl.exe --install -d Ubuntu
+        
+        # Try web download if standard install failed
+        if (-not (Get-TargetWSLDistro)) {
+            Write-Host "  [*] Retrying with direct web download..." -ForegroundColor Yellow
+            wsl.exe --install -d Ubuntu --web-download 2>&1 | Out-Null
+        }
     }
 
     wsl.exe --set-default-version 2 2>$null | Out-Null
@@ -1066,19 +1086,49 @@ if ($targetDistro) {
     # Re-detect distro
     $targetDistro = Get-TargetWSLDistro
     if (-not $targetDistro) {
-        Write-Host ""
-        Write-Host "==============================================================================" -ForegroundColor Yellow
-        Write-Host "  [RESTART REQUIRED] Windows Virtual Machine Platform has been enabled.       " -ForegroundColor Yellow
-        Write-Host "==============================================================================" -ForegroundColor Yellow
-        Write-Host "  Windows requires a quick computer restart to finalize Linux virtualization." -ForegroundColor White
-        Write-Host ""
-        Write-Host "  1. Please restart your laptop right now." -ForegroundColor Cyan
-        Write-Host "  2. After restarting, double-click this INSTALL_ALL_ns3.bat file again." -ForegroundColor Cyan
-        Write-Host "     (It will automatically resume right where you left off!)" -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "  Press Enter to close this window and restart your PC..." -ForegroundColor Yellow
-        Wait-ForEnter
-        exit 0
+        # Check if Windows actually has a pending reboot flag
+        $rebootPending = (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending") -or
+                         (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired")
+
+        if ($rebootPending) {
+            Write-Host ""
+            Write-Host "==============================================================================" -ForegroundColor Yellow
+            Write-Host "  [RESTART REQUIRED] Windows Virtual Machine Platform has been enabled.       " -ForegroundColor Yellow
+            Write-Host "==============================================================================" -ForegroundColor Yellow
+            Write-Host "  Windows requires a quick computer restart to finalize Linux virtualization." -ForegroundColor White
+            Write-Host ""
+            Write-Host "  1. Please restart your laptop right now." -ForegroundColor Cyan
+            Write-Host "  2. After restarting, double-click this INSTALL_ALL_ns3.bat file again." -ForegroundColor Cyan
+            Write-Host "     (It will automatically resume right where you left off!)" -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "  Press Enter to close this window and restart your PC..." -ForegroundColor Yellow
+            Wait-ForEnter
+            exit 0
+        } else {
+            # Not a reboot issue: Direct download of Ubuntu package
+            Write-Host ""
+            Write-Host "  [*] Windows Store did not respond. Fetching official Ubuntu package directly..." -ForegroundColor Yellow
+            $appxFile = "$env:TEMP\Ubuntu2204.appx"
+            try {
+                [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+                (New-Object System.Net.WebClient).DownloadFile("https://aka.ms/wslubuntu2204", $appxFile)
+                Add-AppxPackage -Path $appxFile -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 5
+                $targetDistro = Get-TargetWSLDistro
+            } catch {}
+            
+            if (-not $targetDistro) {
+                Write-Host ""
+                Write-Host "==============================================================================" -ForegroundColor Red
+                Write-Host "  [!] Ubuntu installation encountered an issue." -ForegroundColor Red
+                Write-Host "==============================================================================" -ForegroundColor Red
+                Write-Host "  Please open PowerShell as Administrator and run:" -ForegroundColor White
+                Write-Host "    wsl --install -d Ubuntu" -ForegroundColor Yellow
+                Write-Host "  Once Ubuntu finishes downloading, run this installer again." -ForegroundColor White
+                Wait-ForEnter
+                exit 1
+            }
+        }
     }
     Write-Host "  [OK] WSL2 and $targetDistro installed successfully!" -ForegroundColor Green
 }
