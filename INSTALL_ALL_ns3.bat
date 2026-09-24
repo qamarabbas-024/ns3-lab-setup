@@ -445,11 +445,12 @@ fi
     wsl.exe -d $TargetDistro bash -lic "cd ~/workspace/ns-3-dev && ./ns3 build lab1-simulation simple-network hello-simulator first"
     Write-Host "        [PASS] Binaries compiled and ready for execution!" -ForegroundColor Green
 
-    # 5. Audit VS Code & Desktop Launchers
+    # 5. Audit VS Code, Run Helper & Desktop Launchers
     Write-Host "`n  [5/5] Auditing VS Code Integration & Desktop Shortcuts..." -ForegroundColor Yellow
     wsl.exe -d $TargetDistro bash -lic "code --install-extension ms-vscode-remote.remote-wsl 2>/dev/null || true"
+    Install-RunHelperCommand -Distro $TargetDistro
     New-DesktopShortcuts -TargetDir $TargetDir -TargetDistro $TargetDistro
-    Write-Host "        [PASS] Desktop shortcuts and VS Code remote bridge verified!" -ForegroundColor Green
+    Write-Host "        [PASS] Desktop shortcuts, 'run' helper, and VS Code remote bridge verified!" -ForegroundColor Green
 
     Write-Host ""
     Write-Host "==============================================================================" -ForegroundColor Cyan
@@ -457,6 +458,50 @@ fi
     Write-Host "==============================================================================" -ForegroundColor Cyan
     Write-Host "`nPress Enter to return to menu..." -ForegroundColor Gray
     Wait-ForEnter
+}
+
+# Function to configure global 'run' CLI command inside Ubuntu
+function Install-RunHelperCommand {
+    param([string]$Distro)
+    try {
+        $runScript = @'
+cat << 'RUN_EOF' > /usr/local/bin/run
+#!/bin/bash
+TARGET="$1"
+if [ -z "$TARGET" ]; then
+    echo "==========================================================="
+    echo "  ns-3 Quick Simulation Runner - Created by Qamar Abbas"
+    echo "==========================================================="
+    echo "  Usage:   run <simulation_name> [args...]"
+    echo ""
+    echo "  Examples:"
+    echo "    run lab1-simulation"
+    echo "    run simple-network"
+    echo "    run first"
+    echo "    run hello-simulator"
+    echo "==========================================================="
+    exit 1
+fi
+TARGET="${TARGET%.cc}"
+TARGET="${TARGET#scratch/}"
+TARGET="${TARGET#./scratch/}"
+WS="$HOME/workspace/ns-3-dev"
+if [ ! -d "$WS" ]; then
+    WS="/root/workspace/ns-3-dev"
+fi
+if [ ! -d "$WS" ]; then
+    echo "[!] Could not locate ~/workspace/ns-3-dev"
+    exit 1
+fi
+cd "$WS" || exit 1
+shift
+./ns3 run "$TARGET" -- "$@"
+RUN_EOF
+chmod +x /usr/local/bin/run
+'@
+        $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($runScript))
+        wsl.exe -d $Distro -u root bash -c "echo '$b64' | base64 -d | bash" 2>$null
+    } catch {}
 }
 
 # Function to show Simulation Control Center
@@ -592,10 +637,10 @@ echo ======================================================================
 echo  Current Directory: ~/workspace/ns-3-dev
 echo.
 echo  LAB 1 CHEAT SHEET:
-echo    - Run Simulation : ./ns3 run lab1-simulation
-echo    - Simple 3-Node  : ./ns3 run simple-network
-echo    - Tutorial Echo  : ./ns3 run first
-echo    - Smoke Test     : ./ns3 run hello-simulator
+echo    - Run Simulation : run lab1-simulation  (or ./ns3 run lab1-simulation)
+echo    - Simple 3-Node  : run simple-network
+echo    - Tutorial Echo  : run first
+echo    - Smoke Test     : run hello-simulator
 echo    - Recompile Code : ./ns3 build
 echo    - Open VS Code   : code .
 echo    - Exit to Windows: exit
@@ -1206,6 +1251,7 @@ echo '[OK] C++ compilers, Python ecosystem, and build tools successfully install
         exit 1
     }
     Write-Host "`n  [OK] All C++ compilers and build tools successfully installed!" -ForegroundColor Green
+    Install-RunHelperCommand -Distro $targetDistro
 }
 
 # 10. Phase 7: Fetch & Compile ns-3 Simulator Core
